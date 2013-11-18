@@ -59,7 +59,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
     @Before
     public void init() throws Exception {
         createIndex("idx");
-        IndexRequestBuilder[] lowCardBuilders = new IndexRequestBuilder[5]; // NOCOMMIT randomize the size?
+        IndexRequestBuilder[] lowCardBuilders = new IndexRequestBuilder[5]; // TODO randomize the size?
         for (int i = 0; i < lowCardBuilders.length; i++) {
             lowCardBuilders[i] = client().prepareIndex("idx", "type").setSource(jsonBuilder()
                     .startObject()
@@ -68,7 +68,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
                     .endObject());
         }
         indexRandom(true, lowCardBuilders);
-        IndexRequestBuilder[] highCardBuilders = new IndexRequestBuilder[100]; // NOCOMMIT randomize the size?
+        IndexRequestBuilder[] highCardBuilders = new IndexRequestBuilder[100]; // TODO randomize the size?
 
         for (int i = 0; i < highCardBuilders.length; i++) {
             highCardBuilders[i] = client().prepareIndex("idx", "high_card_type").setSource(jsonBuilder()

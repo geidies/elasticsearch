@@ -50,14 +50,14 @@ public abstract class AbstractNumericTests extends ElasticsearchIntegrationTest 
 
         List<IndexRequestBuilder> builders = new ArrayList<IndexRequestBuilder>();
 
-        for (int i = 0; i < 10; i++) { // NOCOMMIT randomize the size and the params in here?
+        for (int i = 0; i < 10; i++) { // TODO randomize the size and the params in here?
             builders.add(client().prepareIndex("idx", "type", ""+i).setSource(jsonBuilder()
                     .startObject()
                     .field("value", i+1)
                     .startArray("values").value(i+2).value(i+3).endArray()
                     .endObject()));
         }
-        indexRandom(true, builders.toArray(new IndexRequestBuilder[builders.size()]));
+        indexRandom(true, builders);
 
         // creating an index to test the empty buckets functionality. The way it works is by indexing
         // two docs {value: 0} and {value : 2}, then building a histogram agg with interval 1 and with empty
@@ -71,7 +71,7 @@ public abstract class AbstractNumericTests extends ElasticsearchIntegrationTest 
                     .field("value", i*2)
                     .endObject()));
         }
-        indexRandom(true, builders.toArray(new IndexRequestBuilder[builders.size()]));
+        indexRandom(true, builders);
 
     }
 

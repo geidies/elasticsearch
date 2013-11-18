@@ -46,7 +46,7 @@ import static org.hamcrest.core.IsNull.notNullValue;
  */
 public class LongTermsTests extends ElasticsearchIntegrationTest {
 
-    private static final int NUM_DOCS = 5; // NOCOMMIT randomize the size?
+    private static final int NUM_DOCS = 5; // TODO randomize the size?
 
     @Override
     public Settings indexSettings() {
@@ -68,7 +68,7 @@ public class LongTermsTests extends ElasticsearchIntegrationTest {
                     .endObject());
         }
         indexRandom(randomBoolean(), lowCardBuilders);
-        IndexRequestBuilder[] highCardBuilders = new IndexRequestBuilder[100]; // NOCOMMIT randomize the size?
+        IndexRequestBuilder[] highCardBuilders = new IndexRequestBuilder[100]; // TODO randomize the size?
         for (int i = 0; i < highCardBuilders.length; i++) {
            highCardBuilders[i] = client().prepareIndex("idx", "high_card_type").setSource(jsonBuilder()
                     .startObject()

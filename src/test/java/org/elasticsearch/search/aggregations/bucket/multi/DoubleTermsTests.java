@@ -46,7 +46,7 @@ import static org.hamcrest.core.IsNull.notNullValue;
  */
 public class DoubleTermsTests extends ElasticsearchIntegrationTest {
 
-    private static final int NUM_DOCS = 5; // nocommit randomize the size
+    private static final int NUM_DOCS = 5; // TODO: randomize the size?
 
     @Override
     public Settings indexSettings() {
@@ -70,7 +70,7 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
                     
         }
         indexRandom(randomBoolean(), lowcardBuilders);
-        IndexRequestBuilder[] highCardBuilders = new IndexRequestBuilder[100]; // nocommit randomize the size
+        IndexRequestBuilder[] highCardBuilders = new IndexRequestBuilder[100]; // TODO: randomize the size?
         for (int i = 0; i < highCardBuilders.length; i++) {
             highCardBuilders[i] = client().prepareIndex("idx", "high_card_type").setSource(jsonBuilder()
                     .startObject()

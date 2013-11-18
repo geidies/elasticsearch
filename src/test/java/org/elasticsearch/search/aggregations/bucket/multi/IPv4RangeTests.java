@@ -62,8 +62,8 @@ public class IPv4RangeTests extends ElasticsearchIntegrationTest {
         prepareCreate("idx")
                 .addMapping("type", "ip", "type=ip", "ips", "type=ip")
                 .execute().actionGet();
-        IndexRequestBuilder[] builders = new IndexRequestBuilder[255]; // NOCOMMIT randomize the number of docs
-        //NOCOMMIT randomize the values in the docs?
+        IndexRequestBuilder[] builders = new IndexRequestBuilder[255]; // TODO randomize the size?
+        // TODO randomize the values in the docs?
         for (int i = 0; i < builders.length; i++) {
             builders[i] = client().prepareIndex("idx", "type").setSource(jsonBuilder()
                     .startObject()
