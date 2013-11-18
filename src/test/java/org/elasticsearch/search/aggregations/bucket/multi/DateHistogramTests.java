@@ -722,7 +722,7 @@ public class DateHistogramTests extends ElasticsearchIntegrationTest {
         DateHistogram.Bucket bucket = histo.getByKey(key);
         assertThat(bucket, notNullValue());
         assertThat(bucket.getKey(), equalTo(key));
-        assertThat(bucket.getDocCount(), equalTo(1l)); //NOCOMMIT - this fails if replicas > 0
+        assertThat(bucket.getDocCount(), equalTo(1l));
 
         key = new DateTime(2012, 2, 1, 0, 0, DateTimeZone.UTC).getMillis();
         bucket = histo.getByKey(key);
