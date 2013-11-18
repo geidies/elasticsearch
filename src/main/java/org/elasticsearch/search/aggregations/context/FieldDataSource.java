@@ -481,6 +481,9 @@ public abstract class FieldDataSource {
                 @Override
                 public int setDocument(int docId) {
                     final int numValues = super.setDocument(docId);
+                    if (numValues == 0) {
+                        return numUniqueValues = 0;
+                    }
                     array = ArrayUtil.grow(array, numValues);
                     for (int i = 0; i < numValues; ++i) {
                         array[i] = super.nextValue();
@@ -535,6 +538,9 @@ public abstract class FieldDataSource {
                 @Override
                 public int setDocument(int docId) {
                     final int numValues = super.setDocument(docId);
+                    if (numValues == 0) {
+                        return numUniqueValues = 0;
+                    }
                     array = ArrayUtil.grow(array, numValues);
                     for (int i = 0; i < numValues; ++i) {
                         array[i] = super.nextValue();

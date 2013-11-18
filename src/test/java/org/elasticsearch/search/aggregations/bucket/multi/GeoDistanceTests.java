@@ -25,6 +25,7 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.DistanceUnit;
+import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.aggregations.bucket.multi.histogram.Histogram;
 import org.elasticsearch.search.aggregations.bucket.multi.range.geodistance.GeoDistance;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.Terms;
@@ -34,6 +35,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -58,11 +60,12 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
     }
 
     private IndexRequestBuilder indexCity(String name, String latLon) throws Exception {
-        return client().prepareIndex("idx", "type").setSource(jsonBuilder()
-                .startObject()
-                    .field("city", name)
-                    .field("location", latLon)
-                .endObject());
+        XContentBuilder source = jsonBuilder().startObject().field("city", name);
+        if (latLon != null) {
+            source = source.field("location", latLon);
+        }
+        source = source.endObject();
+        return client().prepareIndex("idx", "type").setSource(source);
     }
 
     @Before
@@ -73,9 +76,8 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
 
         createIndex("idx_unmapped");
 
-        //NOCOMMIT inject dummy docs
-
-        indexRandom(true,
+        List<IndexRequestBuilder> cities = new ArrayList<IndexRequestBuilder>();
+        cities.addAll(Arrays.asList(
                 // below 500km
                 indexCity("utrecht", "52.0945, 5.116"),
                 indexCity("haarlem", "52.3890, 4.637"),
@@ -83,7 +85,16 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
                 indexCity("berlin", "52.540, 13.409"),
                 indexCity("prague", "50.086, 14.439"),
                 // above 1000km
-                indexCity("tel-aviv", "32.0741, 34.777"));
+                indexCity("tel-aviv", "32.0741, 34.777")));
+
+        // random cities with no location
+        for (String cityName : Arrays.asList("london", "singapour", "tokyo", "milan")) {
+            if (randomBoolean() || true) {
+                cities.add(indexCity(cityName, null));
+            }
+        }
+
+        indexRandom(true, cities);
     }
 
     @Test
