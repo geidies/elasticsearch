@@ -51,7 +51,7 @@ public final class LongHash {
         Preconditions.checkArgument(maxLoadFactor > 0 && maxLoadFactor < 1, "maxLoadFactor must be > 0 and < 1");
         this.maxLoadFactor = maxLoadFactor;
         long buckets = 1L + (long) (capacity / maxLoadFactor);
-        buckets = Long.highestOneBit(buckets - 1) << 1; // next power of two
+        buckets = Math.max(1, Long.highestOneBit(buckets - 1) << 1); // next power of two
         assert buckets == Long.highestOneBit(buckets);
         maxSize = (long) (buckets * maxLoadFactor);
         assert maxSize >= capacity;
