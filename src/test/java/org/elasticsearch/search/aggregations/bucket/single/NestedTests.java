@@ -24,8 +24,10 @@ import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.aggregations.bucket.multi.histogram.Histogram;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.LongTerms;
+import org.elasticsearch.search.aggregations.bucket.multi.terms.Terms.Bucket;
 import org.elasticsearch.search.aggregations.bucket.single.nested.Nested;
 import org.elasticsearch.search.aggregations.calc.numeric.max.Max;
 import org.elasticsearch.search.aggregations.calc.numeric.stats.Stats;
@@ -57,21 +59,8 @@ public class NestedTests extends ElasticsearchIntegrationTest {
                 .build();
     }
 
-    /*
-
-    1
-        1, 2,3,4,5
-    2
-        2, 3,4,5,6
-    3
-        3,4,5,6,7
-    4
-        4,5,6,7,8
-    5
-        5,6,7,8,9
-
-
-     */
+    int numParents;
+    int[] numChildren;
 
     @Before
     public void init() throws Exception {
@@ -82,20 +71,24 @@ public class NestedTests extends ElasticsearchIntegrationTest {
                 .execute().actionGet();
         List<IndexRequestBuilder> builders = new ArrayList<IndexRequestBuilder>();
 
-        for (int i = 0; i < 5; i++) { // NOCOMMIT randomize the size
-            builders.add(client().prepareIndex("idx", "type", ""+i+1).setSource(jsonBuilder()
-                    .startObject()
-                        .field("value", i + 1)
-                        .startArray("nested")
-                            .startObject().field("value", i + 1).endObject()
-                            .startObject().field("value", i + 2).endObject()
-                            .startObject().field("value", i + 3).endObject()
-                            .startObject().field("value", i + 4).endObject()
-                            .startObject().field("value", i + 5).endObject()
-                        .endArray()
-                    .endObject()));
+        numParents = randomIntBetween(3, 10);
+        numChildren = new int[numParents];
+        for (int i = 0; i < numParents; ++i) {
+            numChildren[i] = randomInt(5);
         }
-        indexRandom(true, builders.toArray(new IndexRequestBuilder[builders.size()]));
+
+        for (int i = 0; i < numParents; i++) {
+            XContentBuilder source = jsonBuilder()
+                    .startObject()
+                    .field("value", i + 1)
+                    .startArray("nested");
+            for (int j = 0; j < numChildren[i]; ++j) {
+                source = source.startObject().field("value", i + 1 + j).endObject();
+            }
+            source = source.endArray().endObject();
+            builders.add(client().prepareIndex("idx", "type", ""+i+1).setSource(source));
+        }
+        indexRandom(true, builders);
     }
 
     @Test
@@ -107,19 +100,33 @@ public class NestedTests extends ElasticsearchIntegrationTest {
 
         assertThat(response.getFailedShards(), equalTo(0));
 
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
+        long sum = 0;
+        long count = 0;
+        for (int i = 0; i < numParents; ++i) {
+            for (int j = 0; j < numChildren[i]; ++j) {
+                final long value = i + 1 + j;
+                min = Math.min(min, value);
+                max = Math.max(max, value);
+                sum += value;
+                ++count;
+            }
+        }
+
         Nested nested = response.getAggregations().get("nested");
         assertThat(nested, notNullValue());
         assertThat(nested.getName(), equalTo("nested"));
-        assertThat(nested.getDocCount(), equalTo(25l));
+        assertThat(nested.getDocCount(), equalTo(count));
         assertThat(nested.getAggregations().asList().isEmpty(), is(false));
 
         Stats stats = nested.getAggregations().get("nested_value_stats");
         assertThat(stats, notNullValue());
-        assertThat(stats.getMin(), equalTo(1.0));
-        assertThat(stats.getMax(), equalTo(9.0));
-        assertThat(stats.getCount(), equalTo(25l));
-        assertThat(stats.getSum(), equalTo((double) 1+2+3+4+5+2+3+4+5+6+3+4+5+6+7+4+5+6+7+8+5+6+7+8+9));
-        assertThat(stats.getAvg(), equalTo((double) (1+2+3+4+5+2+3+4+5+6+3+4+5+6+7+4+5+6+7+8+5+6+7+8+9) / 25 ));
+        assertThat(stats.getMin(), equalTo(min));
+        assertThat(stats.getMax(), equalTo(max));
+        assertThat(stats.getCount(), equalTo(count));
+        assertThat(stats.getSum(), equalTo((double) sum));
+        assertThat(stats.getAvg(), equalTo((double) sum / count));
     }
 
     @Test
@@ -137,64 +144,59 @@ public class NestedTests extends ElasticsearchIntegrationTest {
         }
     }
 
-    /*
-
-    1 - 1
-    2 - 2
-    3 - 3
-    4 - 4
-    5 - 5
-    6 - 4
-    7 - 3
-    8 - 2
-    9 - 1
-
-     */
     @Test
     public void nestedWithSubTermsAgg() throws Exception {
 
         SearchResponse response = client().prepareSearch("idx")
                 .addAggregation(nested("nested").path("nested")
-                        .subAggregation(terms("values").field("nested.value")))
+                        .subAggregation(terms("values").field("nested.value").size(100)))
                 .execute().actionGet();
 
         assertThat(response.getFailedShards(), equalTo(0));
 
+        long docCount = 0;
+        long[] counts = new long[numParents + 6];
+        for (int i = 0; i < numParents; ++i) {
+            for (int j = 0; j < numChildren[i]; ++j) {
+                final int value = i + 1 + j;
+                ++counts[value];
+                ++docCount;
+            }
+        }
+        int uniqueValues = 0;
+        for (long count : counts) {
+            if (count > 0) {
+                ++uniqueValues;
+            }
+        }
+
         Nested nested = response.getAggregations().get("nested");
         assertThat(nested, notNullValue());
         assertThat(nested.getName(), equalTo("nested"));
-        assertThat(nested.getDocCount(), equalTo(25l));
+        assertThat(nested.getDocCount(), equalTo(docCount));
         assertThat(nested.getAggregations().asList().isEmpty(), is(false));
 
         LongTerms values = nested.getAggregations().get("values");
         assertThat(values, notNullValue());
         assertThat(values.getName(), equalTo("values"));
         assertThat(values.buckets(), notNullValue());
-        assertThat(values.buckets().size(), equalTo(9));
-        assertThat(values.getByTerm("1"), notNullValue());
-        assertThat(values.getByTerm("1").getDocCount(), equalTo(1l));
-        assertThat(values.getByTerm("2"), notNullValue());
-        assertThat(values.getByTerm("2").getDocCount(), equalTo(2l));
-        assertThat(values.getByTerm("3"), notNullValue());
-        assertThat(values.getByTerm("3").getDocCount(), equalTo(3l));
-        assertThat(values.getByTerm("4"), notNullValue());
-        assertThat(values.getByTerm("4").getDocCount(), equalTo(4l));
-        assertThat(values.getByTerm("5"), notNullValue());
-        assertThat(values.getByTerm("5").getDocCount(), equalTo(5l));
-        assertThat(values.getByTerm("6"), notNullValue());
-        assertThat(values.getByTerm("6").getDocCount(), equalTo(4l));
-        assertThat(values.getByTerm("7"), notNullValue());
-        assertThat(values.getByTerm("7").getDocCount(), equalTo(3l));
-        assertThat(values.getByTerm("8"), notNullValue());
-        assertThat(values.getByTerm("8").getDocCount(), equalTo(2l));
-        assertThat(values.getByTerm("9"), notNullValue());
-        assertThat(values.getByTerm("9").getDocCount(), equalTo(1l));
+        assertThat(values.buckets().size(), equalTo(uniqueValues));
+        for (int i = 0; i < counts.length; ++i) {
+            final String key = Long.toString(i);
+            if (counts[i] == 0) {
+                assertNull(values.getByTerm(key));
+            } else {
+                Bucket bucket = values.getByTerm(key);
+                assertNotNull(bucket);
+                assertEquals(counts[i], bucket.getDocCount());
+            }
+        }
     }
 
     @Test
     public void nestedAsSubAggregation() throws Exception {
         SearchResponse response = client().prepareSearch("idx")
-                .addAggregation(terms("top_values").field("value")
+                .addAggregation(terms("top_values").field("value").size(100)
                         .subAggregation(nested("nested").path("nested")
                                 .subAggregation(max("max_value").field("nested.value"))))
                 .execute().actionGet();
@@ -205,16 +207,16 @@ public class NestedTests extends ElasticsearchIntegrationTest {
         assertThat(values, notNullValue());
         assertThat(values.getName(), equalTo("top_values"));
         assertThat(values.buckets(), notNullValue());
-        assertThat(values.buckets().size(), equalTo(5));
+        assertThat(values.buckets().size(), equalTo(numParents));
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < numParents; i++) {
             String topValue = "" + (i + 1);
             assertThat(values.getByTerm(topValue), notNullValue());
             Nested nested = values.getByTerm(topValue).getAggregations().get("nested");
             assertThat(nested, notNullValue());
             Max max = nested.getAggregations().get("max_value");
             assertThat(max, notNullValue());
-            assertThat(max.getValue(), equalTo(i + 5.0));
+            assertThat(max.getValue(), equalTo(numChildren[i] == 0 ? Double.NEGATIVE_INFINITY : (double) i + numChildren[i]));
         }
     }
 
