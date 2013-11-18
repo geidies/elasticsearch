@@ -24,14 +24,17 @@ import com.google.common.base.Preconditions;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.util.LongArray;
 
-/** Specialized hash table implementation similar to BytesRefHash that maps
+/**
+ * Specialized hash table implementation similar to BytesRefHash that maps
  *  long values to ids. Collisions are resolved with open addressing and linear
  *  probing, growth is smooth thanks to {@link BigArrays} and capacity is always
- *  a multiple of 2 for faster identification of buckets. */
+ *  a multiple of 2 for faster identification of buckets.
+ */
 // IDs are internally stored as id + 1 so that 0 encodes for an empty slot
 public final class LongHash {
 
-    /** Open addressing typically requires having smaller load factors compared to linked lists because collisions may result into worse lookup performance. */
+    // Open addressing typically requires having smaller load factors compared to linked lists because
+    // collisions may result into worse lookup performance.
     private static final float DEFAULT_MAX_LOAD_FACTOR = 0.6f;
 
     private final float maxLoadFactor;
@@ -40,12 +43,12 @@ public final class LongHash {
     private LongArray ids;
     private long mask;
 
-    /** Constructor with configurable capacity and default maximum load factor. */
+    // Constructor with configurable capacity and default maximum load factor.
     public LongHash(long capacity) {
         this(capacity, DEFAULT_MAX_LOAD_FACTOR);
     }
 
-    /** Constructor with configurable capacity and load factor. */
+    //Constructor with configurable capacity and load factor.
     public LongHash(long capacity, float maxLoadFactor) {
         Preconditions.checkArgument(capacity >= 0, "capacity must be >= 0");
         Preconditions.checkArgument(maxLoadFactor > 0 && maxLoadFactor < 1, "maxLoadFactor must be > 0 and < 1");
@@ -61,12 +64,16 @@ public final class LongHash {
         mask = buckets - 1;
     }
 
-    /** Return the number of allocated slots to store this hash table. */
+    /**
+     * Return the number of allocated slots to store this hash table.
+     */
     public long capacity() {
         return keys.size();
     }
 
-    /** Return the number of longs in this hash table. */
+    /**
+     * Return the number of longs in this hash table.
+     */
     public long size() {
         return size;
     }
@@ -85,17 +92,23 @@ public final class LongHash {
         return (curSlot + 1) & mask; // linear probing
     }
 
-    /** Get the id associated with key at <code>0 &lte; index &lte; capacity()</code> or -1 if this slot is unused. */
+    /**
+     * Get the id associated with key at <code>0 &lte; index &lte; capacity()</code> or -1 if this slot is unused.
+     */
     public long id(long index) {
         return ids.get(index) - 1;
     }
 
-    /** Return the key at <code>0 &lte; index &lte; capacity()</code>. The result is undefined if the slot is unused. */
+    /**
+     * Return the key at <code>0 &lte; index &lte; capacity()</code>. The result is undefined if the slot is unused.
+     */
     public long key(long index) {
         return keys.get(index);
     }
 
-    /** Get the id associated with <code>key</code> */
+    /**
+     * Get the id associated with <code>key</code>
+     */
     public long get(long key) {
         final long slot = slot(hash(key), mask);
         for (long index = slot; ; index = nextSlot(index, mask)) {
@@ -122,7 +135,10 @@ public final class LongHash {
         }
     }
 
-    /** Try to add <code>key</code>. Return its newly allocated id if it wasn't in the hash table yet, or </code>-1-id</code> if it was already present in the hash table. */
+    /**
+     * Try to add <code>key</code>. Return its newly allocated id if it wasn't in the hash table yet, or </code>-1-id</code>
+     * if it was already present in the hash table.
+     */
     public long add(long key) {
         if (size >= maxSize) {
             assert size == maxSize;

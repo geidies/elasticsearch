@@ -870,6 +870,8 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void unmapped_WithStringDates() throws Exception {
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForGreenStatus().execute().actionGet();
+
         SearchResponse response = client().prepareSearch("idx_unmapped")
                 .addAggregation(dateRange("range")
                         .field("date")
@@ -915,6 +917,8 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void partiallyUnmapped() throws Exception {
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForGreenStatus().execute().actionGet();
+
         SearchResponse response = client().prepareSearch("idx", "idx_unmapped")
                 .addAggregation(dateRange("range")
                         .field("date")

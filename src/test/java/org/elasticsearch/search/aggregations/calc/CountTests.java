@@ -41,19 +41,15 @@ public class CountTests extends ElasticsearchIntegrationTest {
     @Override
     public Settings indexSettings() {
         return ImmutableSettings.builder()
-                .put("index.number_of_shards", numberOfShards())
-                .put("index.number_of_replicas", 0)
+                .put("index.number_of_shards", between(1, 5))
+                .put("index.number_of_replicas", between(0, 1))
                 .build();
-    }
-
-    protected int numberOfShards() {
-        return 5;
     }
 
     @Before
     public void init() throws Exception {
         createIndex("idx");
-        createIndex("idx2");
+        createIndex("idx_unmapped");
         for (int i = 0; i < 10; i++) {
             client().prepareIndex("idx", "type", ""+i).setSource(jsonBuilder()
                     .startObject()
@@ -67,9 +63,9 @@ public class CountTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testUnmapped() throws Exception {
+    public void unmapped() throws Exception {
 
-        SearchResponse searchResponse = client().prepareSearch("idx2")
+        SearchResponse searchResponse = client().prepareSearch("idx_unmapped")
                 .setQuery(matchAllQuery())
                 .addAggregation(count("count").field("value"))
                 .execute().actionGet();
@@ -83,7 +79,7 @@ public class CountTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testSingleValuedField() throws Exception {
+    public void singleValuedField() throws Exception {
 
         SearchResponse searchResponse = client().prepareSearch("idx")
                 .setQuery(matchAllQuery())
@@ -99,8 +95,8 @@ public class CountTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testSingleValuedField_PartiallyUnmapped() throws Exception {
-        SearchResponse searchResponse = client().prepareSearch("idx", "idx2")
+    public void singleValuedField_PartiallyUnmapped() throws Exception {
+        SearchResponse searchResponse = client().prepareSearch("idx", "idx_unmapped")
                 .setQuery(matchAllQuery())
                 .addAggregation(count("count").field("value"))
                 .execute().actionGet();
@@ -114,7 +110,7 @@ public class CountTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testMultiValuedField() throws Exception {
+    public void multiValuedField() throws Exception {
 
         SearchResponse searchResponse = client().prepareSearch("idx")
                 .setQuery(matchAllQuery())

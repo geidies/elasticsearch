@@ -46,7 +46,7 @@ public abstract class AbstractNumericTests extends ElasticsearchIntegrationTest 
     @Before
     public void init() throws Exception {
         createIndex("idx");
-        createIndex("idx2");
+        createIndex("idx_unmapped");
 
         List<IndexRequestBuilder> builders = new ArrayList<IndexRequestBuilder>();
 

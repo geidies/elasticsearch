@@ -60,9 +60,9 @@ public class StatsTests extends AbstractNumericTests {
 
     @Test
     public void testUnmapped() throws Exception {
-        client().admin().cluster().prepareHealth("idx2").setWaitForGreenStatus().execute().actionGet();
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForGreenStatus().execute().actionGet();
 
-        SearchResponse searchResponse = client().prepareSearch("idx2")
+        SearchResponse searchResponse = client().prepareSearch("idx_unmapped")
                 .setQuery(matchAllQuery())
                 .addAggregation(stats("stats").field("value"))
                 .execute().actionGet();
@@ -100,7 +100,7 @@ public class StatsTests extends AbstractNumericTests {
 
     @Test
     public void testSingleValuedField_PartiallyUnmapped() throws Exception {
-        SearchResponse searchResponse = client().prepareSearch("idx", "idx2")
+        SearchResponse searchResponse = client().prepareSearch("idx", "idx_unmapped")
                 .setQuery(matchAllQuery())
                 .addAggregation(stats("stats").field("value"))
                 .execute().actionGet();

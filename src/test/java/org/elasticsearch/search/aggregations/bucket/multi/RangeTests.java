@@ -756,6 +756,8 @@ public class RangeTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void partiallyUnmapped() throws Exception {
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForYellowStatus().execute().actionGet();
+
         SearchResponse response = client().prepareSearch("idx", "idx_unmapped")
                 .addAggregation(range("range")
                         .field("value")

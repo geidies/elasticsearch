@@ -829,6 +829,8 @@ public class DateHistogramTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void partiallyUnmapped() throws Exception {
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForGreenStatus().execute().actionGet();
+
         SearchResponse response = client().prepareSearch("idx", "idx_unmapped")
                 .addAggregation(dateHistogram("histo").field("date").interval(DateHistogram.Interval.MONTH))
                 .execute().actionGet();

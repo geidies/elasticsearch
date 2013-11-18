@@ -98,7 +98,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testGeoDistance() throws Exception {
+    public void simple() throws Exception {
         SearchResponse response = client().prepareSearch("idx")
                 .addAggregation(geoDistance("amsterdam_rings")
                         .field("location")
@@ -139,7 +139,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testGeoDistance_WithCustomKeys() throws Exception {
+    public void simple_WithCustomKeys() throws Exception {
         SearchResponse response = client().prepareSearch("idx")
                 .addAggregation(geoDistance("amsterdam_rings")
                         .field("location")
@@ -180,7 +180,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testUnmapped() throws Exception {
+    public void unmapped() throws Exception {
         client().admin().cluster().prepareHealth("idx_unmapped").setWaitForYellowStatus().execute().actionGet();
 
         SearchResponse response = client().prepareSearch("idx_unmapped")
@@ -223,7 +223,9 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void testPartiallyUnmapped() throws Exception {
+    public void partiallyUnmapped() throws Exception {
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForYellowStatus().execute().actionGet();
+
         SearchResponse response = client().prepareSearch("idx", "idx_unmapped")
                 .addAggregation(geoDistance("amsterdam_rings")
                         .field("location")
@@ -265,7 +267,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
 
 
     @Test
-    public void testGeoDistance_WithSubAggregation() throws Exception {
+    public void withSubAggregation() throws Exception {
         SearchResponse response = client().prepareSearch("idx")
                 .addAggregation(geoDistance("amsterdam_rings")
                         .field("location")

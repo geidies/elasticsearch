@@ -771,6 +771,8 @@ public class IPv4RangeTests extends ElasticsearchIntegrationTest {
 
     @Test
     public void partiallyUnmapped() throws Exception {
+        client().admin().cluster().prepareHealth("idx_unmapped").setWaitForYellowStatus().execute().actionGet();
+
         SearchResponse response = client().prepareSearch("idx", "idx_unmapped")
                 .addAggregation(ipRange("range")
                         .field("ip")

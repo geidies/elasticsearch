@@ -160,29 +160,7 @@ public class MissingTests extends ElasticsearchIntegrationTest {
     }
 
     @Test
-    public void filter_WithInheritedSubAggregation() throws Exception {
-
-        SearchResponse response = client().prepareSearch("idx")
-                .addAggregation(missing("top_missing").field("tag")
-                        .subAggregation(missing("sub_missing")))
-                .execute().actionGet();
-
-        assertThat(response.getFailedShards(), equalTo(0));
-
-        Missing topMissing = response.getAggregations().get("top_missing");
-        assertThat(topMissing, notNullValue());
-        assertThat(topMissing.getName(), equalTo("top_missing"));
-        assertThat(topMissing.getDocCount(), equalTo((long) numDocsMissing));
-        assertThat(topMissing.getAggregations().asList().isEmpty(), is(false));
-
-        Missing subMissing = topMissing.getAggregations().get("sub_missing");
-        assertThat(subMissing, notNullValue());
-        assertThat(subMissing.getName(), equalTo("sub_missing"));
-        assertThat(subMissing.getDocCount(), equalTo((long) numDocsMissing));
-    }
-
-    @Test
-    public void missing_WithInheritedSubMissing() throws Exception {
+    public void withInheritedSubMissing() throws Exception {
 
         SearchResponse response = client().prepareSearch()
                 .addAggregation(missing("top_missing").field("tag")

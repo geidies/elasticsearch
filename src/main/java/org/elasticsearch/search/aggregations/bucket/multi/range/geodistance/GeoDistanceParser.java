@@ -136,7 +136,8 @@ public class GeoDistanceParser implements AggregatorParser {
                         } else if (Double.isNaN(lat)) {
                             lat = parser.doubleValue();
                         } else {
-                            throw new SearchParseException(context, "malformed [origin] geo point array in geo_distance aggregator [" + aggregationName + "]. a geo point array must be of the form [lon, lat]");
+                            throw new SearchParseException(context, "malformed [origin] geo point array in geo_distance aggregator [" + aggregationName + "]. " +
+                                    "a geo point array must be of the form [lon, lat]");
                         }
                     }
                     origin = new GeoPoint(lat, lon);
@@ -157,7 +158,8 @@ public class GeoDistanceParser implements AggregatorParser {
                         }
                     }
                     if (Double.isNaN(lat) || Double.isNaN(lon)) {
-                        throw new SearchParseException(context, "malformed [origin] geo point object. either [lat] or [lon] (or both) are missing in geo_distance aggregator [" + aggregationName + "]");
+                        throw new SearchParseException(context, "malformed [origin] geo point object. either [lat] or [lon] (or both) are " +
+                                "missing in geo_distance aggregator [" + aggregationName + "]");
                     }
                     origin = new GeoPoint(lat, lon);
                 }
@@ -198,7 +200,9 @@ public class GeoDistanceParser implements AggregatorParser {
         private final List<RangeAggregator.Range> ranges;
         private final boolean keyed;
 
-        public GeoDistanceFactory(String name, ValuesSourceConfig<GeoPointValuesSource> valueSourceConfig, AbstractRangeBase.Factory rangeFactory, GeoPoint origin, DistanceUnit unit, GeoDistance distanceType, List<RangeAggregator.Range> ranges, boolean keyed) {
+        public GeoDistanceFactory(String name, ValuesSourceConfig<GeoPointValuesSource> valueSourceConfig,
+                                  AbstractRangeBase.Factory rangeFactory, GeoPoint origin, DistanceUnit unit, GeoDistance distanceType,
+                                  List<RangeAggregator.Range> ranges, boolean keyed) {
             super(name, rangeFactory.type(), valueSourceConfig);
             this.origin = origin;
             this.unit = unit;
