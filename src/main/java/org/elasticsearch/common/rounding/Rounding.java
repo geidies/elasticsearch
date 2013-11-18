@@ -78,13 +78,26 @@ public interface Rounding extends Streamable {
             return ID;
         }
 
+        static long round(long value, long interval) {
+            long rem = value % interval;
+            // We need this condition because % may return a negative result on negative numbers
+            // According to Google caliper's IntModBenchmark, using a condition is faster than attempts to use tricks to avoid
+            // the condition. Moreover, in our case, the condition is very likely to be always true (dates, prices, distances),
+            // so easily predictable by the CPU
+            if (rem < 0) {
+                rem += interval;
+            }
+            return value - rem;
+        }
+
         @Override
         public long round(long value) {
-            return value - value % interval;
+            return round(value, interval);
         }
 
         @Override
         public long nextRoundingValue(long value) {
+            assert value == round(value);
             return value + interval;
         }
 

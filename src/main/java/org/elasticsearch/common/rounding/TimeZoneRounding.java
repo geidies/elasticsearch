@@ -290,7 +290,7 @@ public abstract class TimeZoneRounding implements Rounding {
 
         @Override
         public long round(long utcMillis) {
-            return ((utcMillis / interval) * interval);
+            return Rounding.Interval.round(utcMillis, interval);
         }
 
         @Override
@@ -335,7 +335,7 @@ public abstract class TimeZoneRounding implements Rounding {
         @Override
         public long round(long utcMillis) {
             long time = utcMillis + preTz.getOffset(utcMillis);
-            time = ((time / interval) * interval);
+            time = Rounding.Interval.round(time, interval);
             // now, time is still in local, move it to UTC
             time = time - preTz.getOffset(time);
             // now apply post Tz
@@ -388,7 +388,7 @@ public abstract class TimeZoneRounding implements Rounding {
         @Override
         public long round(long utcMillis) {
             long time = utcMillis + preTz.getOffset(utcMillis);
-            time = ((time / interval) * interval);
+            time = Rounding.Interval.round(time, interval);
             // after rounding, since its day level (and above), its actually UTC!
             // now apply post Tz
             time = time + postTz.getOffset(time);
