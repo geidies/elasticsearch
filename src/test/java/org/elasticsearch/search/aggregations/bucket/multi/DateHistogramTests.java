@@ -61,33 +61,27 @@ public class DateHistogramTests extends ElasticsearchIntegrationTest {
         return new DateTime(2012, month, day, 0, 0, DateTimeZone.UTC);
     }
 
-    private void indexDoc(int month, int day, int value) throws Exception {
-        client().prepareIndex("idx", "type").setSource(jsonBuilder()
+    private IndexRequestBuilder indexDoc(int month, int day, int value) throws Exception {
+        return client().prepareIndex("idx", "type").setSource(jsonBuilder()
                 .startObject()
                 .field("value", value)
                 .field("date", date(month, day))
                 .startArray("dates").value(date(month, day)).value(date(month + 1, day + 1)).endArray()
-                .endObject())
-                .execute().actionGet();
+                .endObject());
     }
 
     @Before
     public void init() throws Exception {
         createIndex("idx");
-        // NOCOMMIT: we must randomize the docs here the risk is too high that we are depending on the order
-        // we should also index way more docs that those (maybe just with dummy fields to get more variation or
-        // use a filter and an alias to filter those that are relevant out)
-        indexDoc(1, 2, 1);  // date: Jan 2, dates: Jan 2, Feb 3
-        indexDoc(2, 2, 2);  // date: Feb 2, dates: Feb 2, Mar 3
-        indexDoc(2, 15, 3); // date: Feb 15, dates: Feb 15, Mar 16
-        indexDoc(3, 2, 4);  // date: Mar 2, dates: Mar 2, Apr 3
-        indexDoc(3, 15, 5); // date: Mar 15, dates: Mar 15, Apr 16
-        indexDoc(3, 23, 6); // date: Mar 23, dates: Mar 23, Apr 24
-
         createIndex("idx_unmapped");
-
-        client().admin().indices().prepareFlush().execute().actionGet();
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        // TODO: would be nice to have more random data here
+        indexRandom(true,
+                indexDoc(1, 2, 1),  // date: Jan 2, dates: Jan 2, Feb 3
+                indexDoc(2, 2, 2),  // date: Feb 2, dates: Feb 2, Mar 3
+                indexDoc(2, 15, 3), // date: Feb 15, dates: Feb 15, Mar 16
+                indexDoc(3, 2, 4),  // date: Mar 2, dates: Mar 2, Apr 3
+                indexDoc(3, 15, 5), // date: Mar 15, dates: Mar 15, Apr 16
+                indexDoc(3, 23, 6)); // date: Mar 23, dates: Mar 23, Apr 24
     }
 
     @Test
