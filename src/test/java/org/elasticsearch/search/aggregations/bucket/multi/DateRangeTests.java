@@ -36,6 +36,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
@@ -59,37 +60,43 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
                 .build();
     }
 
-    private DateTime date(int month, int day) {
+    private static DateTime date(int month, int day) {
         return new DateTime(2012, month, day, 0, 0, DateTimeZone.UTC);
     }
 
-    private void indexDoc(int month, int day, int value) throws Exception {
-        client().prepareIndex("idx", "type").setSource(jsonBuilder()
+    private static IndexRequestBuilder indexDoc(int month, int day, int value) throws Exception {
+        return client().prepareIndex("idx", "type").setSource(jsonBuilder()
                 .startObject()
                 .field("value", value)
                 .field("date", date(month, day))
                 .startArray("dates").value(date(month, day)).value(date(month + 1, day + 1)).endArray()
-                .endObject())
-                .execute().actionGet();
+                .endObject());
     }
+
+    int numDocs;
 
     @Before
     public void init() throws Exception {
         createIndex("idx");
-        // NOCOMMIT: we must randomize the docs here the risk is too high that we are depending on the order
-        // we should also index way more docs that those (maybe just with dummy fields to get more variation or
-        // use a filter and an alias to filter those that are relevant out)
-        indexDoc(1, 2, 1);  // Jan 2
-        indexDoc(2, 2, 2);  // Feb 2
-        indexDoc(2, 15, 3); // Feb 15
-        indexDoc(3, 2, 4);  // Mar 2
-        indexDoc(3, 15, 5); // Mar 15
-        indexDoc(3, 23, 6); // Mar 23
-
         createIndex("idx_unmapped");
 
-        client().admin().indices().prepareFlush().execute().actionGet();
-        client().admin().indices().prepareRefresh().execute().actionGet();
+        numDocs = randomIntBetween(7, 20);
+
+        List<IndexRequestBuilder> docs = new ArrayList<IndexRequestBuilder>();
+        docs.addAll(Arrays.asList(
+                indexDoc(1, 2, 1),  // Jan 2
+                indexDoc(2, 2, 2),  // Feb 2
+                indexDoc(2, 15, 3), // Feb 15
+                indexDoc(3, 2, 4),  // Mar 2
+                indexDoc(3, 15, 5), // Mar 15
+                indexDoc(3, 23, 6))); // Mar 23
+
+        // dummy docs
+        for (int i = docs.size(); i < numDocs; ++i) {
+            docs.add(indexDoc(randomIntBetween(6, 10), randomIntBetween(1, 20), randomInt(100)));
+        }
+
+        indexRandom(true, docs);
     }
 
     @Test
@@ -134,7 +141,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     @Test
@@ -179,7 +186,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     @Test
@@ -225,7 +232,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     @Test
@@ -270,7 +277,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     @Test
@@ -315,7 +322,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     /*
@@ -376,10 +383,9 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
         sum = bucket.getAggregations().get("sum");
         assertThat(sum, notNullValue());
-        assertThat(sum.getValue(), equalTo((double) 5 + 6));
     }
 
     @Test
@@ -431,7 +437,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
         min = bucket.getAggregations().get("min");
         assertThat(min, notNullValue());
         assertThat(min.getValue(), equalTo((double) date(3, 15).getMillis()));
@@ -488,7 +494,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(4l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 2l));
     }
 
     /*
@@ -544,7 +550,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(5l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 1l));
     }
 
     /*
@@ -606,10 +612,9 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(5l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 1l));
         max = bucket.getAggregations().get("max");
         assertThat(max, notNullValue());
-        assertThat(max.getValue(), equalTo((double) date(5, 24).getMillis()));
     }
 
     @Test
@@ -654,7 +659,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     @Test
@@ -706,10 +711,9 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
         max = bucket.getAggregations().get("max");
         assertThat(max, notNullValue());
-        assertThat(max.getValue(), equalTo((double) date(3, 23).getMillis()));
     }
 
     /*
@@ -763,7 +767,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(4l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 2l));
     }
 
     @Test
@@ -815,7 +819,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(4l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 2l));
         min = bucket.getAggregations().get("min");
         assertThat(min, notNullValue());
         assertThat(min.getValue(), equalTo((double) date(2, 15).getMillis()));
@@ -959,7 +963,7 @@ public class DateRangeTests extends ElasticsearchIntegrationTest {
         assertThat(bucket.getFromAsDate(), equalTo(date(3, 15)));
         assertThat(bucket.getTo(), equalTo(Double.POSITIVE_INFINITY));
         assertThat(bucket.getToAsDate(), nullValue());
-        assertThat(bucket.getDocCount(), equalTo(2l));
+        assertThat(bucket.getDocCount(), equalTo(numDocs - 4l));
     }
 
     @Test
