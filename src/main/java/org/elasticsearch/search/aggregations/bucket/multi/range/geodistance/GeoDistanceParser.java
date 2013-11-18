@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.elasticsearch.search.aggregations.bucket.range.geodistance;
+package org.elasticsearch.search.aggregations.bucket.multi.range.geodistance;
 
 import org.elasticsearch.common.geo.GeoDistance;
 import org.elasticsearch.common.geo.GeoPoint;

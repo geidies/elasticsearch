@@ -26,9 +26,9 @@ import org.elasticsearch.search.aggregations.bucket.multi.histogram.DateHistogra
 import org.elasticsearch.search.aggregations.bucket.multi.histogram.HistogramParser;
 import org.elasticsearch.search.aggregations.bucket.multi.range.RangeParser;
 import org.elasticsearch.search.aggregations.bucket.multi.range.date.DateRangeParser;
+import org.elasticsearch.search.aggregations.bucket.multi.range.geodistance.GeoDistanceParser;
 import org.elasticsearch.search.aggregations.bucket.multi.range.ipv4.IpRangeParser;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.TermsParser;
-import org.elasticsearch.search.aggregations.bucket.range.geodistance.GeoDistanceParser;
 import org.elasticsearch.search.aggregations.bucket.single.filter.FilterParser;
 import org.elasticsearch.search.aggregations.bucket.single.global.GlobalParser;
 import org.elasticsearch.search.aggregations.bucket.single.missing.MissingParser;

@@ -24,12 +24,12 @@ import org.elasticsearch.search.aggregations.bucket.multi.histogram.InternalDate
 import org.elasticsearch.search.aggregations.bucket.multi.histogram.InternalHistogram;
 import org.elasticsearch.search.aggregations.bucket.multi.range.InternalRange;
 import org.elasticsearch.search.aggregations.bucket.multi.range.date.InternalDateRange;
+import org.elasticsearch.search.aggregations.bucket.multi.range.geodistance.InternalGeoDistance;
 import org.elasticsearch.search.aggregations.bucket.multi.range.ipv4.InternalIPv4Range;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.DoubleTerms;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.LongTerms;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.StringTerms;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.UnmappedTerms;
-import org.elasticsearch.search.aggregations.bucket.range.geodistance.InternalGeoDistance;
 import org.elasticsearch.search.aggregations.bucket.single.filter.InternalFilter;
 import org.elasticsearch.search.aggregations.bucket.single.global.InternalGlobal;
 import org.elasticsearch.search.aggregations.bucket.single.missing.InternalMissing;

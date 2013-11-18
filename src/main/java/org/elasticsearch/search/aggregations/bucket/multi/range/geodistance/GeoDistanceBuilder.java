@@ -1,4 +1,4 @@
-package org.elasticsearch.search.aggregations.bucket.range.geodistance;
+package org.elasticsearch.search.aggregations.bucket.multi.range.geodistance;
 
 import com.google.common.collect.Lists;
 import org.elasticsearch.common.geo.GeoDistance;
