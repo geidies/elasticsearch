@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.elasticsearch.search.aggregations.bucket.multi.terms;
+package org.elasticsearch.search.aggregations.bucket.multi;
 
 import com.carrotsearch.hppc.LongLongMap;
 import com.carrotsearch.hppc.LongLongOpenHashMap;
