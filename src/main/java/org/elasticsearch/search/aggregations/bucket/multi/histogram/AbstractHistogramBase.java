@@ -277,7 +277,7 @@ abstract class AbstractHistogramBase<B extends HistogramBase.Bucket> extends Int
         int size = in.readVInt();
         List<B> buckets = new ArrayList<B>(size);
         for (int i = 0; i < size; i++) {
-            buckets.add(createBucket(in.readVLong(), in.readVLong(), InternalAggregations.readAggregations(in)));
+            buckets.add(createBucket(in.readLong(), in.readVLong(), InternalAggregations.readAggregations(in)));
         }
         this.buckets = buckets;
         this.bucketsMap = null;
@@ -297,7 +297,7 @@ abstract class AbstractHistogramBase<B extends HistogramBase.Bucket> extends Int
         out.writeBoolean(keyed);
         out.writeVInt(buckets.size());
         for (HistogramBase.Bucket bucket : buckets) {
-            out.writeVLong(((Bucket) bucket).key);
+            out.writeLong(((Bucket) bucket).key);
             out.writeVLong(((Bucket) bucket).docCount);
             ((Bucket) bucket).aggregations.writeTo(out);
         }

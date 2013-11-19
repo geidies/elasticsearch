@@ -25,6 +25,7 @@ import org.elasticsearch.action.support.IgnoreIndices;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.search.aggregations.bucket.multi.histogram.Histogram;
 import org.elasticsearch.search.aggregations.bucket.multi.range.Range;
 import org.elasticsearch.search.aggregations.bucket.multi.range.Range.Bucket;
 import org.elasticsearch.search.aggregations.bucket.multi.range.RangeBuilder;
@@ -34,6 +35,8 @@ import org.elasticsearch.test.ElasticsearchIntegrationTest;
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.elasticsearch.search.aggregations.AggregationBuilders.*;
 import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertNoFailures;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.core.IsNull.notNullValue;
 
 /** Additional tests that aim at testing more complex aggregation trees on larger random datasets, so that things like the growth of dynamic arrays is tested. */
 public class RandomTests extends ElasticsearchIntegrationTest {
@@ -123,7 +126,7 @@ public class RandomTests extends ElasticsearchIntegrationTest {
     }
 
     // test long/double/string terms aggs with high number of buckets that require array growth
-    public void testDuellTerms() throws Exception {
+    public void testDuelTerms() throws Exception {
         final int numDocs = atLeast(1000);
         final int maxNumTerms = randomIntBetween(10, 10000);
 
@@ -190,6 +193,51 @@ public class RandomTests extends ElasticsearchIntegrationTest {
             assertNotNull(stringBucket);
             assertEquals(bucket.getDocCount(), doubleBucket.getDocCount());
             assertEquals(bucket.getDocCount(), stringBucket.getDocCount());
+        }
+    }
+
+    public void testDuelTermsHistogram() throws Exception {
+        createIndex("idx");
+
+        final int numDocs = atLeast(1000);
+        final int maxNumTerms = randomIntBetween(10, 2000);
+        final int interval = randomIntBetween(1, 100);
+
+        final Integer[] values = new Integer[maxNumTerms];
+        for (int i = 0; i < values.length; ++i) {
+            values[i] = randomInt(maxNumTerms * 3) - maxNumTerms;
+        }
+
+        for (int i = 0; i < numDocs; ++i) {
+            XContentBuilder source = jsonBuilder()
+                    .startObject()
+                    .field("num", randomDouble())
+                    .startArray("values");
+            final int numValues = randomInt(4);
+            for (int j = 0; j < numValues; ++j) {
+                source = source.value(randomFrom(values));
+            }
+            source = source.endArray().endObject();
+            client().prepareIndex("idx", "type").setSource(source).execute().actionGet();
+        }
+        assertNoFailures(client().admin().indices().prepareRefresh("idx").setIgnoreIndices(IgnoreIndices.MISSING).execute().get());
+
+        SearchResponse resp = client().prepareSearch("idx")
+                .addAggregation(terms("terms").field("values").script("floor(_value / interval)").param("interval", interval).size(maxNumTerms))
+                .addAggregation(histogram("histo").field("values").interval(interval))
+                .execute().actionGet();
+
+        assertThat(resp.getFailedShards(), equalTo(0));
+
+        Terms terms = resp.getAggregations().get("terms");
+        assertThat(terms, notNullValue());
+        Histogram histo = resp.getAggregations().get("histo");
+        assertThat(histo, notNullValue());
+        assertThat(terms.buckets().size(), equalTo(histo.buckets().size()));
+        for (Terms.Bucket bucket : terms) {
+            final long key = bucket.getTermAsNumber().longValue() * interval;
+            final Histogram.Bucket histoBucket = histo.getByKey(key);
+            assertEquals(bucket.getDocCount(), histoBucket.getDocCount());
         }
     }
 
