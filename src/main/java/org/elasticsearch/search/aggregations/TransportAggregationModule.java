@@ -20,27 +20,27 @@
 package org.elasticsearch.search.aggregations;
 
 import org.elasticsearch.common.inject.AbstractModule;
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.InternalDateHistogram;
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.InternalHistogram;
-import org.elasticsearch.search.aggregations.bucket.multi.range.InternalRange;
-import org.elasticsearch.search.aggregations.bucket.multi.range.date.InternalDateRange;
-import org.elasticsearch.search.aggregations.bucket.multi.range.geodistance.InternalGeoDistance;
-import org.elasticsearch.search.aggregations.bucket.multi.range.ipv4.InternalIPv4Range;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.DoubleTerms;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.LongTerms;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.StringTerms;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.UnmappedTerms;
-import org.elasticsearch.search.aggregations.bucket.single.filter.InternalFilter;
-import org.elasticsearch.search.aggregations.bucket.single.global.InternalGlobal;
-import org.elasticsearch.search.aggregations.bucket.single.missing.InternalMissing;
-import org.elasticsearch.search.aggregations.bucket.single.nested.InternalNested;
-import org.elasticsearch.search.aggregations.calc.bytes.count.InternalCount;
-import org.elasticsearch.search.aggregations.calc.numeric.avg.InternalAvg;
-import org.elasticsearch.search.aggregations.calc.numeric.max.InternalMax;
-import org.elasticsearch.search.aggregations.calc.numeric.min.InternalMin;
-import org.elasticsearch.search.aggregations.calc.numeric.stats.InternalStats;
-import org.elasticsearch.search.aggregations.calc.numeric.stats.extended.InternalExtendedStats;
-import org.elasticsearch.search.aggregations.calc.numeric.sum.InternalSum;
+import org.elasticsearch.search.aggregations.bucket.histogram.InternalDateHistogram;
+import org.elasticsearch.search.aggregations.bucket.histogram.InternalHistogram;
+import org.elasticsearch.search.aggregations.bucket.range.InternalRange;
+import org.elasticsearch.search.aggregations.bucket.range.date.InternalDateRange;
+import org.elasticsearch.search.aggregations.bucket.range.geodistance.InternalGeoDistance;
+import org.elasticsearch.search.aggregations.bucket.range.ipv4.InternalIPv4Range;
+import org.elasticsearch.search.aggregations.bucket.terms.DoubleTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.LongTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.StringTerms;
+import org.elasticsearch.search.aggregations.bucket.terms.UnmappedTerms;
+import org.elasticsearch.search.aggregations.bucket.filter.InternalFilter;
+import org.elasticsearch.search.aggregations.bucket.global.InternalGlobal;
+import org.elasticsearch.search.aggregations.bucket.missing.InternalMissing;
+import org.elasticsearch.search.aggregations.bucket.nested.InternalNested;
+import org.elasticsearch.search.aggregations.metrics.valuecount.InternalValueCount;
+import org.elasticsearch.search.aggregations.metrics.avg.InternalAvg;
+import org.elasticsearch.search.aggregations.metrics.max.InternalMax;
+import org.elasticsearch.search.aggregations.metrics.min.InternalMin;
+import org.elasticsearch.search.aggregations.metrics.stats.InternalStats;
+import org.elasticsearch.search.aggregations.metrics.stats.extended.InternalExtendedStats;
+import org.elasticsearch.search.aggregations.metrics.sum.InternalSum;
 
 /**
  * A module that registers all the transport streams for the addAggregation
@@ -57,7 +57,7 @@ public class TransportAggregationModule extends AbstractModule {
         InternalMax.registerStreams();
         InternalStats.registerStreams();
         InternalExtendedStats.registerStreams();
-        InternalCount.registerStreams();
+        InternalValueCount.registerStreams();
 
         // buckets
         InternalGlobal.registerStreams();

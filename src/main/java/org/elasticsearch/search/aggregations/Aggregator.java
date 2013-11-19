@@ -19,8 +19,9 @@
 
 package org.elasticsearch.search.aggregations;
 
-import org.elasticsearch.search.aggregations.context.AggregationContext;
-import org.elasticsearch.search.aggregations.factory.AggregatorFactories;
+import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.search.aggregations.support.AggregationContext;
+import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -169,4 +170,29 @@ public abstract class Aggregator {
         return new InternalAggregations(aggs);
     }
 
+    /**
+     * Parses the aggregation request and creates the appropriate aggregator factory for it.
+     *
+     * @see {@link AggregatorFactory}
+    */
+    public static interface Parser {
+
+        /**
+         * @return The aggregation type this parser is associated with.
+         */
+        String type();
+
+        /**
+         * Returns the aggregator factory with which this parser is associated, may return {@code null} indicating the
+         * aggregation should be skipped (e.g. when trying to aggregate on unmapped fields).
+         *
+         * @param aggregationName   The name of the aggregation
+         * @param parser            The xcontent parser
+         * @param context           The search context
+         * @return                  The resolved aggregator factory or {@code null} in case the aggregation should be skipped
+         * @throws java.io.IOException      When parsing fails
+         */
+        AggregatorFactory parse(String aggregationName, XContentParser parser, SearchContext context) throws IOException;
+
+    }
 }

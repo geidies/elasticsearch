@@ -28,11 +28,11 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.index.query.FilterBuilders;
 import org.elasticsearch.index.query.RangeFilterBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.Histogram;
-import org.elasticsearch.search.aggregations.bucket.multi.range.Range;
-import org.elasticsearch.search.aggregations.bucket.multi.range.RangeBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.Terms;
-import org.elasticsearch.search.aggregations.bucket.single.filter.Filter;
+import org.elasticsearch.search.aggregations.bucket.histogram.Histogram;
+import org.elasticsearch.search.aggregations.bucket.range.Range;
+import org.elasticsearch.search.aggregations.bucket.range.RangeBuilder;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.elasticsearch.search.aggregations.bucket.filter.Filter;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;

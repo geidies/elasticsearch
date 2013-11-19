@@ -1,23 +1,23 @@
 package org.elasticsearch.search.aggregations;
 
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.DateHistogramBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.HistogramBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.range.RangeBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.range.date.DateRangeBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.range.geodistance.GeoDistanceBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.range.ipv4.IPv4RangeBuilder;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.TermsBuilder;
-import org.elasticsearch.search.aggregations.bucket.single.filter.FilterAggregationBuilder;
-import org.elasticsearch.search.aggregations.bucket.single.global.GlobalBuilder;
-import org.elasticsearch.search.aggregations.bucket.single.missing.MissingBuilder;
-import org.elasticsearch.search.aggregations.bucket.single.nested.NestedBuilder;
-import org.elasticsearch.search.aggregations.calc.bytes.count.CountBuilder;
-import org.elasticsearch.search.aggregations.calc.numeric.avg.AvgBuilder;
-import org.elasticsearch.search.aggregations.calc.numeric.max.MaxBuilder;
-import org.elasticsearch.search.aggregations.calc.numeric.min.MinBuilder;
-import org.elasticsearch.search.aggregations.calc.numeric.stats.StatsBuilder;
-import org.elasticsearch.search.aggregations.calc.numeric.stats.extended.ExtendedStatsBuilder;
-import org.elasticsearch.search.aggregations.calc.numeric.sum.SumBuilder;
+import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramBuilder;
+import org.elasticsearch.search.aggregations.bucket.histogram.HistogramBuilder;
+import org.elasticsearch.search.aggregations.bucket.range.RangeBuilder;
+import org.elasticsearch.search.aggregations.bucket.range.date.DateRangeBuilder;
+import org.elasticsearch.search.aggregations.bucket.range.geodistance.GeoDistanceBuilder;
+import org.elasticsearch.search.aggregations.bucket.range.ipv4.IPv4RangeBuilder;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsBuilder;
+import org.elasticsearch.search.aggregations.bucket.filter.FilterAggregationBuilder;
+import org.elasticsearch.search.aggregations.bucket.global.GlobalBuilder;
+import org.elasticsearch.search.aggregations.bucket.missing.MissingBuilder;
+import org.elasticsearch.search.aggregations.bucket.nested.NestedBuilder;
+import org.elasticsearch.search.aggregations.metrics.valuecount.ValueCountBuilder;
+import org.elasticsearch.search.aggregations.metrics.avg.AvgBuilder;
+import org.elasticsearch.search.aggregations.metrics.max.MaxBuilder;
+import org.elasticsearch.search.aggregations.metrics.min.MinBuilder;
+import org.elasticsearch.search.aggregations.metrics.stats.StatsBuilder;
+import org.elasticsearch.search.aggregations.metrics.stats.extended.ExtendedStatsBuilder;
+import org.elasticsearch.search.aggregations.metrics.sum.SumBuilder;
 
 /**
  *
@@ -27,8 +27,8 @@ public class AggregationBuilders {
     protected AggregationBuilders() {
     }
 
-    public static CountBuilder count(String name) {
-        return new CountBuilder(name);
+    public static ValueCountBuilder count(String name) {
+        return new ValueCountBuilder(name);
     }
 
     public static AvgBuilder avg(String name) {

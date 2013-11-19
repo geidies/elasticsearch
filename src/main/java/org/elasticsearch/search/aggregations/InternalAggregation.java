@@ -59,7 +59,7 @@ public abstract class InternalAggregation implements Aggregation, ToXContent, St
         }
 
         /**
-         * @return The name of the type (mainly used for registering the parser for the aggregator (see {@link org.elasticsearch.search.aggregations.parser.AggregatorParser#type()}).
+         * @return The name of the type (mainly used for registering the parser for the aggregator (see {@link org.elasticsearch.search.aggregations.Aggregator.Parser#type()}).
          */
         public String name() {
             return name;

@@ -19,8 +19,7 @@
 
 package org.elasticsearch.search.aggregations;
 
-import org.elasticsearch.search.aggregations.context.AggregationContext;
-import org.elasticsearch.search.aggregations.factory.AggregatorFactories;
+import org.elasticsearch.search.aggregations.support.AggregationContext;
 
 /**
  * The aggregation context that is part of the search context.

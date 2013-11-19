@@ -22,27 +22,24 @@ package org.elasticsearch.search.aggregations;
 import com.google.common.collect.Lists;
 import org.elasticsearch.common.inject.AbstractModule;
 import org.elasticsearch.common.inject.multibindings.Multibinder;
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.DateHistogramParser;
-import org.elasticsearch.search.aggregations.bucket.multi.histogram.HistogramParser;
-import org.elasticsearch.search.aggregations.bucket.multi.range.RangeParser;
-import org.elasticsearch.search.aggregations.bucket.multi.range.date.DateRangeParser;
-import org.elasticsearch.search.aggregations.bucket.multi.range.geodistance.GeoDistanceParser;
-import org.elasticsearch.search.aggregations.bucket.multi.range.ipv4.IpRangeParser;
-import org.elasticsearch.search.aggregations.bucket.multi.terms.TermsParser;
-import org.elasticsearch.search.aggregations.bucket.single.filter.FilterParser;
-import org.elasticsearch.search.aggregations.bucket.single.global.GlobalParser;
-import org.elasticsearch.search.aggregations.bucket.single.missing.MissingParser;
-import org.elasticsearch.search.aggregations.bucket.single.nested.NestedParser;
-import org.elasticsearch.search.aggregations.calc.bytes.count.CountParser;
-import org.elasticsearch.search.aggregations.calc.numeric.avg.AvgParser;
-import org.elasticsearch.search.aggregations.calc.numeric.max.MaxParser;
-import org.elasticsearch.search.aggregations.calc.numeric.min.MinParser;
-import org.elasticsearch.search.aggregations.calc.numeric.stats.StatsParser;
-import org.elasticsearch.search.aggregations.calc.numeric.stats.extended.ExtendedStatsParser;
-import org.elasticsearch.search.aggregations.calc.numeric.sum.SumParser;
-import org.elasticsearch.search.aggregations.parser.AggregationParseElement;
-import org.elasticsearch.search.aggregations.parser.AggregatorParser;
-import org.elasticsearch.search.aggregations.parser.AggregatorParsers;
+import org.elasticsearch.search.aggregations.bucket.histogram.DateHistogramParser;
+import org.elasticsearch.search.aggregations.bucket.histogram.HistogramParser;
+import org.elasticsearch.search.aggregations.bucket.range.RangeParser;
+import org.elasticsearch.search.aggregations.bucket.range.date.DateRangeParser;
+import org.elasticsearch.search.aggregations.bucket.range.geodistance.GeoDistanceParser;
+import org.elasticsearch.search.aggregations.bucket.range.ipv4.IpRangeParser;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsParser;
+import org.elasticsearch.search.aggregations.bucket.filter.FilterParser;
+import org.elasticsearch.search.aggregations.bucket.global.GlobalParser;
+import org.elasticsearch.search.aggregations.bucket.missing.MissingParser;
+import org.elasticsearch.search.aggregations.bucket.nested.NestedParser;
+import org.elasticsearch.search.aggregations.metrics.valuecount.ValueCountParser;
+import org.elasticsearch.search.aggregations.metrics.avg.AvgParser;
+import org.elasticsearch.search.aggregations.metrics.max.MaxParser;
+import org.elasticsearch.search.aggregations.metrics.min.MinParser;
+import org.elasticsearch.search.aggregations.metrics.stats.StatsParser;
+import org.elasticsearch.search.aggregations.metrics.stats.extended.ExtendedStatsParser;
+import org.elasticsearch.search.aggregations.metrics.sum.SumParser;
 
 import java.util.List;
 
@@ -51,7 +48,7 @@ import java.util.List;
  */
 public class AggregationModule extends AbstractModule {
 
-    private List<Class<? extends AggregatorParser>> parsers = Lists.newArrayList();
+    private List<Class<? extends Aggregator.Parser>> parsers = Lists.newArrayList();
 
     public AggregationModule() {
         parsers.add(AvgParser.class);
@@ -60,7 +57,7 @@ public class AggregationModule extends AbstractModule {
         parsers.add(MaxParser.class);
         parsers.add(StatsParser.class);
         parsers.add(ExtendedStatsParser.class);
-        parsers.add(CountParser.class);
+        parsers.add(ValueCountParser.class);
 
         parsers.add(GlobalParser.class);
         parsers.add(MissingParser.class);
@@ -80,14 +77,14 @@ public class AggregationModule extends AbstractModule {
      *
      * @param parser The parser for the custom aggregator.
      */
-    public void addAggregatorParser(Class<? extends AggregatorParser> parser) {
+    public void addAggregatorParser(Class<? extends Aggregator.Parser> parser) {
         parsers.add(parser);
     }
 
     @Override
     protected void configure() {
-        Multibinder<AggregatorParser> multibinder = Multibinder.newSetBinder(binder(), AggregatorParser.class);
-        for (Class<? extends AggregatorParser> parser : parsers) {
+        Multibinder<Aggregator.Parser> multibinder = Multibinder.newSetBinder(binder(), Aggregator.Parser.class);
+        for (Class<? extends Aggregator.Parser> parser : parsers) {
             multibinder.addBinding().to(parser);
         }
         bind(AggregatorParsers.class).asEagerSingleton();
