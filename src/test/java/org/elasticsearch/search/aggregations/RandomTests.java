@@ -20,16 +20,19 @@
 package org.elasticsearch.search.aggregations;
 
 import com.carrotsearch.hppc.IntOpenHashSet;
+import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.support.IgnoreIndices;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.index.query.FilterBuilders;
+import org.elasticsearch.index.query.RangeFilterBuilder;
 import org.elasticsearch.search.aggregations.bucket.multi.histogram.Histogram;
 import org.elasticsearch.search.aggregations.bucket.multi.range.Range;
-import org.elasticsearch.search.aggregations.bucket.multi.range.Range.Bucket;
 import org.elasticsearch.search.aggregations.bucket.multi.range.RangeBuilder;
 import org.elasticsearch.search.aggregations.bucket.multi.terms.Terms;
+import org.elasticsearch.search.aggregations.bucket.single.filter.Filter;
 import org.elasticsearch.test.ElasticsearchIntegrationTest;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
@@ -50,6 +53,7 @@ public class RandomTests extends ElasticsearchIntegrationTest {
     }
 
     // Make sure that unordered, reversed, disjoint and/or overlapping ranges are supported
+    // Duel with filters
     public void testRandomRanges() throws Exception {
         final int numDocs = atLeast(1000);
         final double[][] docs = new double[numDocs][];
@@ -104,8 +108,19 @@ public class RandomTests extends ElasticsearchIntegrationTest {
             }
         }
 
-        SearchResponse resp = client().prepareSearch("idx")
-                .addAggregation(query).execute().actionGet();
+        SearchRequestBuilder reqBuilder = client().prepareSearch("idx").addAggregation(query);
+        for (int i = 0; i < ranges.length; ++i) {
+            RangeFilterBuilder filter = FilterBuilders.rangeFilter("values");
+            if (ranges[i][0] != Double.NEGATIVE_INFINITY) {
+                filter = filter.from(ranges[i][0]);
+            }
+            if (ranges[i][1] != Double.POSITIVE_INFINITY){
+                filter = filter.to(ranges[i][1]);
+            }
+            reqBuilder = reqBuilder.addAggregation(filter("filter" + i).filter(filter));
+        }
+
+        SearchResponse resp = reqBuilder.execute().actionGet();
         Range range = resp.getAggregations().get("range");
 
         for (int i = 0; i < ranges.length; ++i) {
@@ -120,8 +135,11 @@ public class RandomTests extends ElasticsearchIntegrationTest {
                 }
             }
 
-            final Bucket bucket = range.getByKey(Integer.toString(i));
+            final Range.Bucket bucket = range.getByKey(Integer.toString(i));
             assertEquals(bucket.getKey(), count, bucket.getDocCount());
+
+            final Filter filter = resp.getAggregations().get("filter" + i);
+            assertThat(filter.getDocCount(), equalTo(count));
         }
     }
 
@@ -196,6 +214,7 @@ public class RandomTests extends ElasticsearchIntegrationTest {
         }
     }
 
+    // Duel between histograms and scripted terms
     public void testDuelTermsHistogram() throws Exception {
         createIndex("idx");
 
