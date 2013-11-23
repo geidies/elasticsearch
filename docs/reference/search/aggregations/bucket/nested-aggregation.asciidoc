@@ -1,4 +1,4 @@
-[[search-aggregations-bucket-missing-aggregation]]
+[[search-aggregations-bucket-nested-aggregation]]
 === Nested
 
 A special single bucket aggregation that enables aggregating nested documents.
