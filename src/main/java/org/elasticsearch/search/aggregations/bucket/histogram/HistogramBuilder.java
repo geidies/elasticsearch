@@ -29,7 +29,7 @@ public class HistogramBuilder extends ValuesSourceAggregationBuilder<HistogramBu
         return this;
     }
 
-    public HistogramBuilder computeEmptyBuckets(boolean computeEmptyBuckets) {
+    public HistogramBuilder emptyBuckets(boolean computeEmptyBuckets) {
         this.computeEmptyBuckets = computeEmptyBuckets;
         return this;
     }
@@ -47,7 +47,7 @@ public class HistogramBuilder extends ValuesSourceAggregationBuilder<HistogramBu
         }
 
         if (computeEmptyBuckets != null) {
-            builder.field("compute_empty_buckets", computeEmptyBuckets);
+            builder.field("empty_buckets", computeEmptyBuckets);
         }
 
         return builder;

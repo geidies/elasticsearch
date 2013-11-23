@@ -347,7 +347,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
 
         SearchResponse searchResponse = client().prepareSearch("empty_bucket_idx")
                 .setQuery(matchAllQuery())
-                .addAggregation(histogram("histo").field("value").interval(1l).computeEmptyBuckets(true)
+                .addAggregation(histogram("histo").field("value").interval(1l).emptyBuckets(true)
                         .subAggregation(geoDistance("geo_dist").field("location").point("52.3760, 4.894").addRange("0-100", 0.0, 100.0)))
                 .execute().actionGet();
 

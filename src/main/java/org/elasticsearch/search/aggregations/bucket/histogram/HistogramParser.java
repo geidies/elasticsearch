@@ -54,7 +54,7 @@ public class HistogramParser implements Aggregator.Parser {
         String scriptLang = null;
         Map<String, Object> scriptParams = null;
         boolean keyed = false;
-        boolean computeEmptyBuckets = false;
+        boolean emptyBuckets = false;
         InternalOrder order = (InternalOrder) InternalOrder.KEY_ASC;
         long interval = -1;
         boolean assumeSorted = false;
@@ -79,8 +79,8 @@ public class HistogramParser implements Aggregator.Parser {
             } else if (token == XContentParser.Token.VALUE_BOOLEAN) {
                 if ("keyed".equals(currentFieldName)) {
                     keyed = parser.booleanValue();
-                } else if ("compute_empty_buckets".equals(currentFieldName) || "computeEmptyBuckets".equals(currentFieldName)) {
-                    computeEmptyBuckets = parser.booleanValue();
+                } else if ("empty_buckets".equals(currentFieldName) || "emptyBuckets".equals(currentFieldName)) {
+                    emptyBuckets = parser.booleanValue();
                 } else if ("script_values_sorted".equals(currentFieldName)) {
                     assumeSorted = parser.booleanValue();
                 }
@@ -117,18 +117,18 @@ public class HistogramParser implements Aggregator.Parser {
         }
 
         if (field == null) {
-            return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, computeEmptyBuckets, InternalHistogram.FACTORY);
+            return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, emptyBuckets, InternalHistogram.FACTORY);
         }
 
         FieldMapper<?> mapper = context.smartNameFieldMapper(field);
         if (mapper == null) {
             config.unmapped(true);
-            return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, computeEmptyBuckets, InternalHistogram.FACTORY);
+            return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, emptyBuckets, InternalHistogram.FACTORY);
         }
 
         IndexFieldData<?> indexFieldData = context.fieldData().getForField(mapper);
         config.fieldContext(new FieldContext(field, indexFieldData));
-        return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, computeEmptyBuckets, InternalHistogram.FACTORY);
+        return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, emptyBuckets, InternalHistogram.FACTORY);
 
     }
 

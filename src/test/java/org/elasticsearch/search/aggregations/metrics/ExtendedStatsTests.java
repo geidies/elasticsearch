@@ -53,7 +53,7 @@ public class ExtendedStatsTests extends AbstractNumericTests {
 
         SearchResponse searchResponse = client().prepareSearch("empty_bucket_idx")
                 .setQuery(matchAllQuery())
-                .addAggregation(histogram("histo").field("value").interval(1l).computeEmptyBuckets(true).subAggregation(extendedStats("stats")))
+                .addAggregation(histogram("histo").field("value").interval(1l).emptyBuckets(true).subAggregation(extendedStats("stats")))
                 .execute().actionGet();
 
         assertThat(searchResponse.getHits().getTotalHits(), equalTo(2l));

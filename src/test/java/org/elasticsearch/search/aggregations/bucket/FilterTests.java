@@ -155,7 +155,7 @@ public class FilterTests extends ElasticsearchIntegrationTest {
 
         SearchResponse searchResponse = client().prepareSearch("empty_bucket_idx")
                 .setQuery(matchAllQuery())
-                .addAggregation(histogram("histo").field("value").interval(1l).computeEmptyBuckets(true)
+                .addAggregation(histogram("histo").field("value").interval(1l).emptyBuckets(true)
                         .subAggregation(filter("filter").filter(matchAllFilter())))
                 .execute().actionGet();
 
