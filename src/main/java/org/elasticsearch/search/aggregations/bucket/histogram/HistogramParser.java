@@ -29,6 +29,7 @@ import org.elasticsearch.search.aggregations.support.FieldContext;
 import org.elasticsearch.search.aggregations.support.ValuesSourceConfig;
 import org.elasticsearch.search.aggregations.support.numeric.NumericValuesSource;
 import org.elasticsearch.search.aggregations.AggregatorFactory;
+import org.elasticsearch.search.aggregations.support.numeric.ValueFormatter;
 import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
@@ -58,6 +59,7 @@ public class HistogramParser implements Aggregator.Parser {
         InternalOrder order = (InternalOrder) InternalOrder.KEY_ASC;
         long interval = -1;
         boolean assumeSorted = false;
+        String format = null;
 
         XContentParser.Token token;
         String currentFieldName = null;
@@ -71,6 +73,8 @@ public class HistogramParser implements Aggregator.Parser {
                     script = parser.text();
                 } else if ("script_lang".equals(currentFieldName) || "scriptLang".equals(currentFieldName)) {
                     scriptLang = parser.text();
+                } else if ("format".equals(currentFieldName)) {
+                    format = parser.text();
                 }
             } else if (token == XContentParser.Token.VALUE_NUMBER) {
                 if ("interval".equals(currentFieldName)) {
@@ -128,6 +132,11 @@ public class HistogramParser implements Aggregator.Parser {
 
         IndexFieldData<?> indexFieldData = context.fieldData().getForField(mapper);
         config.fieldContext(new FieldContext(field, indexFieldData));
+
+        if (format != null) {
+            config.formatter(new ValueFormatter.Number.Pattern(format));
+        }
+
         return new HistogramAggregator.Factory(aggregationName, config, rounding, order, keyed, emptyBuckets, InternalHistogram.FACTORY);
 
     }

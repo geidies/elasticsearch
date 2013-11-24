@@ -60,9 +60,9 @@ public interface Terms extends Aggregation, Iterable<Terms.Bucket> {
 
     static interface Bucket extends Comparable<Bucket>, org.elasticsearch.search.aggregations.bucket.Bucket {
 
-        Text getTerm();
+        Text getKey();
 
-        Number getTermAsNumber();
+        Number getKeyAsNumber();
     }
 
     Collection<Bucket> buckets();

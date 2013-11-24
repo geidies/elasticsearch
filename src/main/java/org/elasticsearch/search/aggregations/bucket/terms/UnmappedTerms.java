@@ -82,7 +82,7 @@ public class UnmappedTerms extends InternalTerms {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(name);
-        builder.startArray(Fields.TERMS).endArray();
+        builder.startArray(CommonFields.BUCKETS).endArray();
         builder.endObject();
         return builder;
     }

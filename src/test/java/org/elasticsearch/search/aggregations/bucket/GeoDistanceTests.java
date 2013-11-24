@@ -297,7 +297,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
         assertThat(cities, Matchers.notNullValue());
         Set<String> names = Sets.newHashSet();
         for (Terms.Bucket city : cities) {
-            names.add(city.getTerm().string());
+            names.add(city.getKey().string());
         }
         assertThat(names.contains("utrecht") && names.contains("haarlem"), is(true));
 
@@ -312,7 +312,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
         assertThat(cities, Matchers.notNullValue());
         names = Sets.newHashSet();
         for (Terms.Bucket city : cities) {
-            names.add(city.getTerm().string());
+            names.add(city.getKey().string());
         }
         assertThat(names.contains("berlin") && names.contains("prague"), is(true));
 
@@ -327,7 +327,7 @@ public class GeoDistanceTests extends ElasticsearchIntegrationTest {
         assertThat(cities, Matchers.notNullValue());
         names = Sets.newHashSet();
         for (Terms.Bucket city : cities) {
-            names.add(city.getTerm().string());
+            names.add(city.getKey().string());
         }
         assertThat(names.contains("tel-aviv"), is(true));
     }

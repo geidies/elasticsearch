@@ -101,8 +101,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double)i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double)i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double)i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -126,8 +126,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 20; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -150,8 +150,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         int i = 0;
         for (Terms.Bucket bucket : terms.buckets()) {
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double)i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double)i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             i++;
         }
@@ -175,8 +175,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         int i = 4;
         for (Terms.Bucket bucket : terms.buckets()) {
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             i--;
         }
@@ -200,8 +200,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             Sum sum = bucket.getAggregations().get("sum");
             assertThat(sum, notNullValue());
@@ -227,8 +227,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             Sum sum = bucket.getAggregations().get("sum");
             assertThat(sum, notNullValue());
@@ -254,8 +254,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (i+1d));
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (i+1d)));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i+1));
+            assertThat(bucket.getKey().string(), equalTo("" + (i+1d)));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i+1));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -277,8 +277,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             if (i == 0 || i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
             } else {
@@ -305,8 +305,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (i+1d));
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (i+1d)));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i+1));
+            assertThat(bucket.getKey().string(), equalTo("" + (i+1d)));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i+1));
             if (i == 0 || i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
             } else {
@@ -332,8 +332,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
 
         Terms.Bucket bucket = terms.getByTerm("1.0");
         assertThat(bucket, notNullValue());
-        assertThat(bucket.getTerm().string(), equalTo("1.0"));
-        assertThat(bucket.getTermAsNumber().intValue(), equalTo(1));
+        assertThat(bucket.getKey().string(), equalTo("1.0"));
+        assertThat(bucket.getKeyAsNumber().intValue(), equalTo(1));
         assertThat(bucket.getDocCount(), equalTo(5l));
     }
 
@@ -373,8 +373,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (i+1d));
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (i+1d)));
-            assertThat(bucket.getTermAsNumber().doubleValue(), equalTo(i+1d));
+            assertThat(bucket.getKey().string(), equalTo("" + (i+1d)));
+            assertThat(bucket.getKeyAsNumber().doubleValue(), equalTo(i+1d));
             final long count = i == 0 || i == 5 ? 1 : 2;
             double s = 0;
             for (int j = 0; j < NUM_DOCS; ++j) {
@@ -407,8 +407,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -431,8 +431,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             Sum sum = bucket.getAggregations().get("sum");
             assertThat(sum, notNullValue());
@@ -457,8 +457,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             if (i == 0 || i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
             } else {
@@ -509,8 +509,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + i + ".0");
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + i + ".0"));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + i + ".0"));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             final long count = i == 0 || i == 5 ? 1 : 2;
             double s = 0;
             for (int j = 0; j < NUM_DOCS; ++j) {
@@ -562,8 +562,8 @@ public class DoubleTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("" + (double) i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("" + (double) i));
-            assertThat(bucket.getTermAsNumber().intValue(), equalTo(i));
+            assertThat(bucket.getKey().string(), equalTo("" + (double) i));
+            assertThat(bucket.getKeyAsNumber().intValue(), equalTo(i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }

@@ -24,7 +24,6 @@ import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.common.io.stream.Streamable;
 import org.elasticsearch.common.text.Text;
 import org.elasticsearch.common.xcontent.ToXContent;
-import org.elasticsearch.common.xcontent.XContentBuilderString;
 import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.InternalAggregations;
@@ -120,7 +119,7 @@ public abstract class InternalTerms extends InternalAggregation implements Terms
         if (bucketMap == null) {
             bucketMap = Maps.newHashMapWithExpectedSize(buckets.size());
             for (Bucket bucket : buckets) {
-                bucketMap.put(bucket.getTerm().string(), bucket);
+                bucketMap.put(bucket.getKey().string(), bucket);
             }
         }
         return bucketMap.get(term);
@@ -146,10 +145,10 @@ public abstract class InternalTerms extends InternalAggregation implements Terms
                 reduced = terms;
             }
             for (Bucket bucket : terms.buckets) {
-                List<Bucket> existingBuckets = buckets.get(bucket.getTerm());
+                List<Bucket> existingBuckets = buckets.get(bucket.getKey());
                 if (existingBuckets == null) {
                     existingBuckets = new ArrayList<Bucket>(aggregations.size());
-                    buckets.put(bucket.getTerm(), existingBuckets);
+                    buckets.put(bucket.getKey(), existingBuckets);
                 }
                 existingBuckets.add(bucket);
             }
@@ -173,12 +172,5 @@ public abstract class InternalTerms extends InternalAggregation implements Terms
         reduced.buckets = Arrays.asList(list);
         return reduced;
     }
-
-
-    protected static class Fields {
-        public static final XContentBuilderString TERMS = new XContentBuilderString("terms");
-        public static final XContentBuilderString TERM = new XContentBuilderString("term");
-    }
-
 
 }

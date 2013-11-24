@@ -573,7 +573,7 @@ public class HistogramTests extends ElasticsearchIntegrationTest {
             assertThat(terms.buckets().size(), equalTo(maxTerm - minTerm + 1));
             Iterator<Terms.Bucket> iter = terms.iterator();
             for (int j = minTerm; j <= maxTerm; ++j) {
-                assertThat(iter.next().getTermAsNumber().longValue(), equalTo((long) j));
+                assertThat(iter.next().getKeyAsNumber().longValue(), equalTo((long) j));
             }
         }
     }

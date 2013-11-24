@@ -66,7 +66,7 @@ public class StringTerms extends InternalTerms {
         }
 
         @Override
-        public Text getTerm() {
+        public Text getKey() {
             return new BytesText(new BytesArray(termBytes));
         }
 
@@ -75,7 +75,7 @@ public class StringTerms extends InternalTerms {
         }
 
         @Override
-        public Number getTermAsNumber() {
+        public Number getKeyAsNumber() {
             // this method is needed for scripted numeric faceting
             return Double.parseDouble(termBytes.utf8ToString());
         }
@@ -127,10 +127,10 @@ public class StringTerms extends InternalTerms {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(name);
-        builder.startArray(Fields.TERMS);
+        builder.startArray(CommonFields.BUCKETS);
         for (InternalTerms.Bucket bucket : buckets) {
             builder.startObject();
-            builder.field(Fields.TERM, ((Bucket) bucket).termBytes);
+            builder.field(CommonFields.KEY, ((Bucket) bucket).termBytes);
             builder.field(CommonFields.DOC_COUNT, bucket.getDocCount());
             ((InternalAggregations) bucket.getAggregations()).toXContentInternal(builder, params);
             builder.endObject();

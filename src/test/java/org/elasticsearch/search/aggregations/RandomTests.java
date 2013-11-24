@@ -205,8 +205,8 @@ public class RandomTests extends ElasticsearchIntegrationTest {
         assertEquals(valuesSet.size(), doubleTerms.buckets().size());
         assertEquals(valuesSet.size(), stringTerms.buckets().size());
         for (Terms.Bucket bucket : longTerms.buckets()) {
-            final Terms.Bucket doubleBucket = doubleTerms.getByTerm(Double.toString(Long.parseLong(bucket.getTerm().string())));
-            final Terms.Bucket stringBucket = stringTerms.getByTerm(bucket.getTerm().string());
+            final Terms.Bucket doubleBucket = doubleTerms.getByTerm(Double.toString(Long.parseLong(bucket.getKey().string())));
+            final Terms.Bucket stringBucket = stringTerms.getByTerm(bucket.getKey().string());
             assertNotNull(doubleBucket);
             assertNotNull(stringBucket);
             assertEquals(bucket.getDocCount(), doubleBucket.getDocCount());
@@ -254,7 +254,7 @@ public class RandomTests extends ElasticsearchIntegrationTest {
         assertThat(histo, notNullValue());
         assertThat(terms.buckets().size(), equalTo(histo.buckets().size()));
         for (Terms.Bucket bucket : terms) {
-            final long key = bucket.getTermAsNumber().longValue() * interval;
+            final long key = bucket.getKeyAsNumber().longValue() * interval;
             final Histogram.Bucket histoBucket = histo.getByKey(key);
             assertEquals(bucket.getDocCount(), histoBucket.getDocCount());
         }

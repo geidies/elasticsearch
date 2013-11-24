@@ -25,13 +25,13 @@ Response:
 
     "aggregations" : {
         "genders" : {
-            "terms" : [
+            "buckets" : [
                 {
-                    "term" : "male",
+                    "key" : "male",
                     "doc_count" : 10
                 },
                 {
-                    "term" : "female",
+                    "key" : "female",
                     "doc_count" : 10
                 },
             ]
@@ -51,6 +51,7 @@ The `size` parameter can be set to define how many term buckets should be return
 The order of the buckets can be customized by setting the `order` parameter. By default, the buckets are ordered by their `doc_count` descending. It is also possible to change this behaviour as follows:
 
 Ordering the buckets by their `doc_count` in an ascending manner:
+
 [source,js]
 --------------------------------------------------
 {
@@ -66,6 +67,7 @@ Ordering the buckets by their `doc_count` in an ascending manner:
 --------------------------------------------------
 
 Ordering the buckets alphabetically by their terms in an ascending manner:
+
 [source,js]
 --------------------------------------------------
 {
@@ -82,6 +84,7 @@ Ordering the buckets alphabetically by their terms in an ascending manner:
 
 
 Ordering the buckets by single value metrics sub-aggregation (identified by the aggregation name):
+
 [source,js]
 --------------------------------------------------
 {
@@ -100,6 +103,7 @@ Ordering the buckets by single value metrics sub-aggregation (identified by the 
 --------------------------------------------------
 
 Ordering the buckets by multi value metrics sub-aggregation (identified by the aggregation name):
+
 [source,js]
 --------------------------------------------------
 {

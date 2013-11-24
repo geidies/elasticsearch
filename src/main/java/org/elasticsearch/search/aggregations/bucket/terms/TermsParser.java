@@ -160,6 +160,9 @@ public class TermsParser implements Aggregator.Parser {
 
         } else if (indexFieldData instanceof IndexNumericFieldData) {
             config = new ValuesSourceConfig<NumericValuesSource>(NumericValuesSource.class);
+            if (format != null) {
+                config.formatter(new ValueFormatter.Number.Pattern(format));
+            }
 
         } else {
             config = new ValuesSourceConfig<BytesValuesSource>(BytesValuesSource.class);

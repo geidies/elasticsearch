@@ -99,7 +99,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -123,7 +123,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 20; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + Strings.padStart(i+"", 3, '0'));
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + Strings.padStart(i+"", 3, '0')));
+            assertThat(bucket.getKey().string(), equalTo("val" + Strings.padStart(i+"", 3, '0')));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -146,7 +146,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         int i = 0;
         for (Terms.Bucket bucket : terms.buckets()) {
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             i++;
         }
@@ -170,7 +170,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         int i = 4;
         for (Terms.Bucket bucket : terms.buckets()) {
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             i--;
         }
@@ -194,7 +194,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             ValueCount valueCount = bucket.getAggregations().get("count");
             assertThat(valueCount, notNullValue());
@@ -220,7 +220,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             ValueCount valueCount = bucket.getAggregations().get("count");
             assertThat(valueCount, notNullValue());
@@ -246,7 +246,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("foo_val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("foo_val" + i));
+            assertThat(bucket.getKey().string(), equalTo("foo_val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -268,7 +268,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
 
         Terms.Bucket bucket = terms.getByTerm("val");
         assertThat(bucket, notNullValue());
-        assertThat(bucket.getTerm().string(), equalTo("val"));
+        assertThat(bucket.getKey().string(), equalTo("val"));
         assertThat(bucket.getDocCount(), equalTo(5l));
     }
 
@@ -289,7 +289,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             if (i == 0 || i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
             } else {
@@ -316,7 +316,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("foo_val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("foo_val" + i));
+            assertThat(bucket.getKey().string(), equalTo("foo_val" + i));
             if (i == 0 || i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
             } else {
@@ -362,7 +362,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("foo_val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("foo_val" + i));
+            assertThat(bucket.getKey().string(), equalTo("foo_val" + i));
             if (i == 0 | i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
                 ValueCount valueCount = bucket.getAggregations().get("count");
@@ -372,7 +372,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
                 assertThat(bucket.getDocCount(), equalTo(2l));
                 ValueCount valueCount = bucket.getAggregations().get("count");
                 assertThat(valueCount, notNullValue());
-                assertThat("term[" + bucket.getTerm().string() + "]", valueCount.getValue(), equalTo(4l));
+                assertThat("term[" + bucket.getKey().string() + "]", valueCount.getValue(), equalTo(4l));
             }
         }
     }
@@ -394,7 +394,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -416,7 +416,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }
@@ -439,7 +439,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
             ValueCount valueCount = bucket.getAggregations().get("count");
             assertThat(valueCount, notNullValue());
@@ -464,7 +464,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             if (i == 0 || i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
             } else {
@@ -491,7 +491,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 6; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             if (i == 0 | i == 5) {
                 assertThat(bucket.getDocCount(), equalTo(1l));
                 ValueCount valueCount = bucket.getAggregations().get("count");
@@ -542,7 +542,7 @@ public class StringTermsTests extends ElasticsearchIntegrationTest {
         for (int i = 0; i < 5; i++) {
             Terms.Bucket bucket = terms.getByTerm("val" + i);
             assertThat(bucket, notNullValue());
-            assertThat(bucket.getTerm().string(), equalTo("val" + i));
+            assertThat(bucket.getKey().string(), equalTo("val" + i));
             assertThat(bucket.getDocCount(), equalTo(1l));
         }
     }

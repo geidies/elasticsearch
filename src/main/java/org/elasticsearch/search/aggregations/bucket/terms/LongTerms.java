@@ -69,18 +69,18 @@ public class LongTerms extends InternalTerms {
         }
 
         @Override
-        public Text getTerm() {
+        public Text getKey() {
             return new StringText(String.valueOf(term));
         }
 
         @Override
-        public Number getTermAsNumber() {
+        public Number getKeyAsNumber() {
             return term;
         }
 
         @Override
         protected int compareTerm(Terms.Bucket other) {
-            long otherTerm = other.getTermAsNumber().longValue();
+            long otherTerm = other.getKeyAsNumber().longValue();
             if (this.term > otherTerm) {
                 return 1;
             }
@@ -189,13 +189,12 @@ public class LongTerms extends InternalTerms {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(name);
-        builder.startArray(Fields.TERMS);
+        builder.startArray(CommonFields.BUCKETS);
         for (InternalTerms.Bucket bucket : buckets) {
             builder.startObject();
+            builder.field(CommonFields.KEY, ((Bucket) bucket).term);
             if (valueFormatter != null) {
-                builder.field(Fields.TERM, valueFormatter.format(((Bucket) bucket).term));
-            } else {
-                builder.field(Fields.TERM, ((Bucket) bucket).term);
+                builder.field(CommonFields.KEY_AS_STRING, valueFormatter.format(((Bucket) bucket).term));
             }
             builder.field(CommonFields.DOC_COUNT, bucket.getDocCount());
             ((InternalAggregations) bucket.getAggregations()).toXContentInternal(builder, params);
