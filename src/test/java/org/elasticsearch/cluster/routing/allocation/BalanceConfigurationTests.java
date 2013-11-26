@@ -380,68 +380,8 @@ public class BalanceConfigurationTests {
                         
                     }
 
-            /*
-             *  // this allocator tries to rebuild this scenario where a rebalance is
-             *  // triggered solely by the primary overload on node [1] where a shard
-             *  // is rebalanced to node 0
-                routing_nodes:
-                -----node_id[0][V]
-                --------[test][0], node[0], [R], s[STARTED]
-                --------[test][4], node[0], [R], s[STARTED]
-                -----node_id[1][V]
-                --------[test][0], node[1], [P], s[STARTED]
-                --------[test][1], node[1], [P], s[STARTED]
-                --------[test][3], node[1], [R], s[STARTED]
-                -----node_id[2][V]
-                --------[test][1], node[2], [R], s[STARTED]
-                --------[test][2], node[2], [R], s[STARTED]
-                --------[test][4], node[2], [P], s[STARTED]
-                -----node_id[3][V]
-                --------[test][2], node[3], [P], s[STARTED]
-                --------[test][3], node[3], [P], s[STARTED]
-                ---- unassigned
-             */
-            @Override
-            public boolean allocateUnassigned(RoutingAllocation allocation) {
-                List<MutableShardRouting> unassigned = allocation.routingNodes().unassigned();
-                boolean changed = !unassigned.isEmpty();
-                for (MutableShardRouting sr : unassigned) {
-                    switch (sr.id()) {
-                        case 0:
-                            if (sr.primary()) {
-                                allocation.routingNodes().assignShardToNode( sr, "node1" );
-                            } else {
-                                allocation.routingNodes().assignShardToNode( sr, "node0" );
-                            }
-                            break;
-                        case 1:
-                            if (sr.primary()) {
-                                allocation.routingNodes().assignShardToNode( sr, "node1" );
-                            } else {
-                                allocation.routingNodes().assignShardToNode( sr, "node2" );
-                            }
-                            break;
-                        case 2:
-                            if (sr.primary()) {
-                                allocation.routingNodes().assignShardToNode( sr, "node3" );
-                            } else {
-                                allocation.routingNodes().assignShardToNode( sr, "node2" );
-                            }
-                            break;
-                        case 3:
-                            if (sr.primary()) {
-                                allocation.routingNodes().assignShardToNode( sr, "node3" );
-                            } else {
-                                allocation.routingNodes().assignShardToNode( sr, "node1" );
-                            }
-                            break;
-                        case 4:
-                            if (sr.primary()) {
-                                allocation.routingNodes().assignShardToNode( sr, "node2" );
-                            } else {
-                                allocation.routingNodes().assignShardToNode( sr, "node0" );
-                            }
-                            break;
+                    @Override
+                    public void applyFailedShards(FailedRerouteAllocation allocation) {
                     }
                     
                     /*
@@ -473,37 +413,37 @@ public class BalanceConfigurationTests {
                             switch (sr.id()) {
                             case 0:
                                 if (sr.primary()) {
-                                    allocation.routingNodes().node("node1").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node1" );
                                 } else {
-                                    allocation.routingNodes().node("node0").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node0" );
                                 }
                                 break;
                             case 1:
                                 if (sr.primary()) {
-                                    allocation.routingNodes().node("node1").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node1" );
                                 } else {
-                                    allocation.routingNodes().node("node2").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node2" );
                                 }
                                 break;
                             case 2:
                                 if (sr.primary()) {
-                                    allocation.routingNodes().node("node3").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node3" );
                                 } else {
-                                    allocation.routingNodes().node("node2").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node2" );
                                 }
                                 break;
                             case 3:
                                 if (sr.primary()) {
-                                    allocation.routingNodes().node("node3").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node3" );
                                 } else {
-                                    allocation.routingNodes().node("node1").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node1" );
                                 }
                                 break;
                             case 4:
                                 if (sr.primary()) {
-                                    allocation.routingNodes().node("node2").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node2" );
                                 } else {
-                                    allocation.routingNodes().node("node0").add(sr);
+                                    allocation.routingNodes().assignShardToNode( sr, "node0" );
                                 }
                                 break;
                             }
@@ -574,5 +514,5 @@ public class BalanceConfigurationTests {
         }
         
     }
-
+    
 }
