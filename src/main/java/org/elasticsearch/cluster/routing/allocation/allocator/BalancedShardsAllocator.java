@@ -534,7 +534,7 @@ public class BalancedShardsAllocator extends AbstractComponent implements Shards
              * This is not guaranteed to be balanced after this operation we still try best effort to 
              * allocate on the minimal eligible node.
              */
-            
+           
             for (ModelNode currentNode : nodes) {
                 if (currentNode.getNodeId().equals(node.nodeId())) {
                     continue;
@@ -547,7 +547,7 @@ public class BalancedShardsAllocator extends AbstractComponent implements Shards
                             shard.currentNodeId(), shard.primary(), INITIALIZING, shard.version() + 1);
                     currentNode.addShard(initializingShard, decision);
                     target.add(initializingShard);
-                    shard.relocate(target.nodeId()); // set the node to relocate after we added the initializing shard
+                    allocation.routingNodes().manager().relocateShard( shard, target.nodeId() ); // set the node to relocate after we added the initializing shard
                     if (logger.isTraceEnabled()) {
                         logger.trace("Moved shard [{}] to node [{}]", shard, currentNode.getNodeId());
                     }
@@ -783,7 +783,7 @@ public class BalancedShardsAllocator extends AbstractComponent implements Shards
                             RoutingNode lowRoutingNode = allocation.routingNodes().node(minNode.getNodeId());
                             lowRoutingNode.add(new MutableShardRouting(candidate.index(), candidate.id(), lowRoutingNode.nodeId(), candidate
                                     .currentNodeId(), candidate.primary(), INITIALIZING, candidate.version() + 1));
-                            candidate.relocate(lowRoutingNode.nodeId());
+                            allocation.routingNodes().manager().relocateShard( candidate, lowRoutingNode.nodeId());
 
                         } else {
                             assert candidate.unassigned();

@@ -91,7 +91,8 @@ public class RoutingNode implements Iterable<MutableShardRouting> {
             }
         }
         shards.add(shard);
-        shard.assignToNode(node.id());
+        RoutingNodes.manager().assignShardToNode( shard, node.id() );
+        // shard.assignToNode(node.id());
     }
 
     /**
