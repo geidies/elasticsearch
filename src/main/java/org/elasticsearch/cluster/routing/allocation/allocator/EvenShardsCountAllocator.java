@@ -177,7 +177,7 @@ public class EvenShardsCountAllocator extends AbstractComponent implements Shard
                                 lowRoutingNode.nodeId(), startedShard.currentNodeId(),
                                 startedShard.primary(), INITIALIZING, startedShard.version() + 1));
 
-                        startedShard.relocate(lowRoutingNode.nodeId());
+                        allocation.routingNodes().manager().relocateShard( startedShard, lowRoutingNode.nodeId() );
                         relocated = true;
                         relocationPerformed = true;
                         break;
@@ -214,7 +214,7 @@ public class EvenShardsCountAllocator extends AbstractComponent implements Shard
                         nodeToCheck.nodeId(), shardRouting.currentNodeId(),
                         shardRouting.primary(), INITIALIZING, shardRouting.version() + 1));
 
-                shardRouting.relocate(nodeToCheck.nodeId());
+                allocation.routingNodes().manager().relocateShard( shardRouting, nodeToCheck.nodeId() );
                 changed = true;
                 break;
             }

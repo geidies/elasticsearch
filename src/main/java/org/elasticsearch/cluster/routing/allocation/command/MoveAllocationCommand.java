@@ -171,7 +171,7 @@ public class MoveAllocationCommand implements AllocationCommand {
                     toRoutingNode.nodeId(), shardRouting.currentNodeId(),
                     shardRouting.primary(), ShardRoutingState.INITIALIZING, shardRouting.version() + 1));
 
-            shardRouting.relocate(toRoutingNode.nodeId());
+            allocation.routingNodes().manager().relocateShard( shardRouting, toRoutingNode.nodeId() );
         }
 
         if (!found) {

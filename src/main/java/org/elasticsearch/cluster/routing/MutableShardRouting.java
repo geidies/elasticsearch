@@ -50,7 +50,7 @@ public class MutableShardRouting extends ImmutableShardRouting {
      * 
      * @param nodeId id of the node to assign this shard to
      */
-    public void assignToNode(String nodeId) {
+    void assignToNode(String nodeId) {
         version++;
         ShardRoutingState oldState = state;
 
@@ -63,12 +63,9 @@ public class MutableShardRouting extends ImmutableShardRouting {
         } else if (state == ShardRoutingState.STARTED) {
             state = ShardRoutingState.RELOCATING;
             relocatingNodeId = nodeId;
-            RoutingNodes.getInstance().notifyRelocating( this );
         } else if (state == ShardRoutingState.RELOCATING) {
             assert nodeId.equals(relocatingNodeId);
-            RoutingNodes.getInstance().notifyRelocating( this );
         }
-        RoutingNodes.getInstance().notifyAssigned( this, oldState != ShardRoutingState.INITIALIZING );
     }
 
     /**
@@ -76,19 +73,18 @@ public class MutableShardRouting extends ImmutableShardRouting {
      * 
      * @param relocatingNodeId id of the node to relocate the shard
      */
-    public void relocate(String relocatingNodeId) {
+    void relocate(String relocatingNodeId) {
         version++;
         assert state == ShardRoutingState.STARTED;
         state = ShardRoutingState.RELOCATING;
         this.relocatingNodeId = relocatingNodeId;
-        RoutingNodes.getInstance().notifyRelocating( this );
     }
 
     /**
      * Cancel relocation of a shard. The shards state must be set
      * to <code>RELOCATING</code>.
      */
-    public void cancelRelocation() {
+    void cancelRelocation() {
         version++;
         assert state == ShardRoutingState.RELOCATING;
         assert assignedToNode();
@@ -96,24 +92,19 @@ public class MutableShardRouting extends ImmutableShardRouting {
 
         state = ShardRoutingState.STARTED;
         relocatingNodeId = null;
-        RoutingNodes.getInstance().notifyRelocationCanceled( this );
     }
 
     /**
      * Set the shards state to <code>UNASSIGNED</code>.
      * //TODO document the state
      */
-    public void deassignNode() {
+    void deassignNode() {
         version++;
         assert state != ShardRoutingState.UNASSIGNED;
-        
-        if ( state == ShardRoutingState.RELOCATING )
-            RoutingNodes.getInstance().notifyRelocationCanceled( this );
 
         state = ShardRoutingState.UNASSIGNED;
         this.currentNodeId = null;
         this.relocatingNodeId = null;
-        RoutingNodes.getInstance().notifyUnassigned( this );
     }
 
     /**
@@ -121,14 +112,11 @@ public class MutableShardRouting extends ImmutableShardRouting {
      * <code>INITIALIZING</code> or <code>RELOCATING</code>. Any relocation will be
      * canceled. 
      */
-    public void moveToStarted() {
+    void moveToStarted() {
         version++;
         assert state == ShardRoutingState.INITIALIZING || state == ShardRoutingState.RELOCATING;
-        if ( state == ShardRoutingState.INITIALIZING && relocatingNodeId != null )
-            RoutingNodes.getInstance().notifyRelocationCanceled( this );
         relocatingNodeId = null;
         state = ShardRoutingState.STARTED;
-        RoutingNodes.getInstance().notifyStarted( this );
     }
 
     /**
