@@ -408,37 +408,37 @@ public class BalanceConfigurationTests extends ElasticsearchTestCase {
                     switch (sr.id()) {
                         case 0:
                             if (sr.primary()) {
-                                allocation.manager().assignShardToNode( sr, "node1" );
+                                allocation.routingNodes().assignShardToNode( sr, "node1" );
                             } else {
-                                allocation.manager().assignShardToNode( sr, "node0" );
+                                allocation.routingNodes().assignShardToNode( sr, "node0" );
                             }
                             break;
                         case 1:
                             if (sr.primary()) {
-                                allocation.manager().assignShardToNode( sr, "node1" );
+                                allocation.routingNodes().assignShardToNode( sr, "node1" );
                             } else {
-                                allocation.manager().assignShardToNode( sr, "node2" );
+                                allocation.routingNodes().assignShardToNode( sr, "node2" );
                             }
                             break;
                         case 2:
                             if (sr.primary()) {
-                                allocation.manager().assignShardToNode( sr, "node3" );
+                                allocation.routingNodes().assignShardToNode( sr, "node3" );
                             } else {
-                                allocation.manager().assignShardToNode( sr, "node2" );
+                                allocation.routingNodes().assignShardToNode( sr, "node2" );
                             }
                             break;
                         case 3:
                             if (sr.primary()) {
-                                allocation.manager().assignShardToNode( sr, "node3" );
+                                allocation.routingNodes().assignShardToNode( sr, "node3" );
                             } else {
-                                allocation.manager().assignShardToNode( sr, "node1" );
+                                allocation.routingNodes().assignShardToNode( sr, "node1" );
                             }
                             break;
                         case 4:
                             if (sr.primary()) {
-                                allocation.manager().assignShardToNode( sr, "node2" );
+                                allocation.routingNodes().assignShardToNode( sr, "node2" );
                             } else {
-                                allocation.manager().assignShardToNode( sr, "node0" );
+                                allocation.routingNodes().assignShardToNode( sr, "node0" );
                             }
                             break;
                     }

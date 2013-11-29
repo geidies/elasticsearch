@@ -22,7 +22,6 @@ package org.elasticsearch.cluster.routing.allocation;
 import org.elasticsearch.cluster.ClusterInfo;
 import org.elasticsearch.cluster.metadata.MetaData;
 import org.elasticsearch.cluster.node.DiscoveryNodes;
-import org.elasticsearch.cluster.routing.RoutingManager;
 import org.elasticsearch.cluster.routing.RoutingNodes;
 import org.elasticsearch.cluster.routing.RoutingTable;
 import org.elasticsearch.cluster.routing.allocation.decider.AllocationDeciders;
@@ -137,14 +136,6 @@ public class RoutingAllocation {
     public RoutingNodes routingNodes() {
         return routingNodes;
     }
-
-    /**
-     * Get {@link RoutingManager} used by current routing nodes
-     * @return routing manager
-     */
-     public RoutingManager manager() {
-         return routingNodes.manager();
-     }
 
     /**
      * Get metadata of routing nodes
