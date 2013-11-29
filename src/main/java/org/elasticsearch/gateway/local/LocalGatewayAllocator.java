@@ -206,7 +206,7 @@ public class LocalGatewayAllocator extends AbstractComponent implements GatewayA
                     // we found a match
                     changed = true;
                     // make sure we create one with the version from the recovered state
-                    node.add(new MutableShardRouting(shard, highestVersion));
+                    allocation.manager().assignShardToNode(new MutableShardRouting(shard, highestVersion), node.nodeId());
                     unassignedIterator.remove();
 
                     // found a node, so no throttling, no "no", and break out of the loop
@@ -226,7 +226,7 @@ public class LocalGatewayAllocator extends AbstractComponent implements GatewayA
                     // we found a match
                     changed = true;
                     // make sure we create one with the version from the recovered state
-                    node.add(new MutableShardRouting(shard, highestVersion));
+                    allocation.manager().assignShardToNode(new MutableShardRouting(shard, highestVersion), node.nodeId());
                     unassignedIterator.remove();
                 }
             } else {
@@ -343,7 +343,7 @@ public class LocalGatewayAllocator extends AbstractComponent implements GatewayA
                     }
                     // we found a match
                     changed = true;
-                    lastNodeMatched.add(shard);
+                    allocation.manager().assignShardToNode( shard, lastNodeMatched.nodeId() );
                     unassignedIterator.remove();
                 }
             }

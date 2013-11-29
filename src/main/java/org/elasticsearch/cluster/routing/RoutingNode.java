@@ -84,22 +84,20 @@ public class RoutingNode implements Iterable<MutableShardRouting> {
      * Add a new shard to this node
      * @param shard Shard to crate on this Node
      */
-    public void add(MutableShardRouting shard) {
+    void add(MutableShardRouting shard) {
         for (MutableShardRouting shardRouting : shards) {
             if (shardRouting.shardId().equals(shard.shardId())) {
                 throw new ElasticSearchIllegalStateException("Trying to add a shard [" + shard.shardId().index().name() + "][" + shard.shardId().id() + "] to a node [" + nodeId + "] where it already exists");
             }
         }
         shards.add(shard);
-        RoutingNodes.manager().assignShardToNode( shard, node.id() );
-        // shard.assignToNode(node.id());
     }
 
     /**
      * Remove a shard from this node
      * @param shardId id of the shard to remove
      */
-    public void removeByShardId(int shardId) {
+    void removeByShardId(int shardId) {
         for (Iterator<MutableShardRouting> it = shards.iterator(); it.hasNext(); ) {
             MutableShardRouting shard = it.next();
             if (shard.id() == shardId) {

@@ -90,11 +90,11 @@ public class ClusterRebalanceAllocationDecider extends AllocationDecider {
     public Decision canRebalance(ShardRouting shardRouting, RoutingAllocation allocation) {
         if (type == ClusterRebalanceType.INDICES_PRIMARIES_ACTIVE) {
             // check if there are unassigned primaries.
-            if ( RoutingNodes.getInstance().hasUnassignedPrimaries() ) {
+            if ( allocation.routingNodes().hasUnassignedPrimaries() ) {
                 return Decision.NO;
             }
             // check if there are initializing primaries that don't have a relocatingNodeId entry.
-            if ( RoutingNodes.getInstance().hasInactivePrimaries() ) {
+            if ( allocation.routingNodes().hasInactivePrimaries() ) {
                 return Decision.NO;
             }
 
@@ -102,12 +102,12 @@ public class ClusterRebalanceAllocationDecider extends AllocationDecider {
         }
         if (type == ClusterRebalanceType.INDICES_ALL_ACTIVE) {
             // check if there are unassigned shards.
-            if ( RoutingNodes.getInstance().hasUnassignedShards() ) {
+            if ( allocation.routingNodes().hasUnassignedShards() ) {
                 return Decision.NO;
             }
             // in case all indices are assigned, are there initializing shards which
             // are not relocating?
-            if ( RoutingNodes.getInstance().hasInactiveShards() ) {
+            if ( allocation.routingNodes().hasInactiveShards() ) {
                 return Decision.NO;
             }
         }
