@@ -88,7 +88,7 @@ public class RoutingTable implements Iterable<IndexRoutingTable> {
     }
 
     public RoutingNodes routingNodes(ClusterState state) {
-        return RoutingNodes.createInstance(state);
+        return new RoutingNodes(state);
     }
 
     public RoutingTable validateRaiseException(MetaData metaData) throws RoutingValidationException {

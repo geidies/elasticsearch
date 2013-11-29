@@ -432,7 +432,7 @@ public class AllocationService extends AbstractComponent {
                             dirty = true;
                             it.remove();
 
-                            allocation.routingNodes().manager().deassignShard( shardRouting );
+                            allocation.manager().deassignShard( shardRouting );
 
                             if (addToIgnoreList) {
                                 // make sure we ignore this shard on the relevant node
@@ -451,7 +451,7 @@ public class AllocationService extends AbstractComponent {
                             MutableShardRouting shardRouting = it.next();
                             if (shardRouting.shardId().equals(failedShard.shardId()) && shardRouting.state() == RELOCATING) {
                                 dirty = true;
-                                allocation.routingNodes().manager().cancelRelocationForShard( shardRouting );
+                                allocation.manager().cancelRelocationForShard( shardRouting );
                                 break;
                             }
                         }
@@ -470,7 +470,7 @@ public class AllocationService extends AbstractComponent {
                         MutableShardRouting shardRouting = it.next();
                         if (shardRouting.equals(failedShard)) {
                             dirty = true;
-                            allocation.routingNodes().manager().cancelRelocationForShard( shardRouting );
+                            allocation.manager().cancelRelocationForShard( shardRouting );
                             it.remove();
                             if (addToIgnoreList) {
                                 // make sure we ignore this shard on the relevant node
@@ -491,7 +491,7 @@ public class AllocationService extends AbstractComponent {
                             MutableShardRouting shardRouting = it.next();
                             if (shardRouting.shardId().equals(failedShard.shardId()) && shardRouting.state() == INITIALIZING) {
                                 dirty = true;
-                                allocation.routingNodes().manager().deassignShard( shardRouting );
+                                allocation.manager().deassignShard( shardRouting );
                                 it.remove();
                             }
                         }

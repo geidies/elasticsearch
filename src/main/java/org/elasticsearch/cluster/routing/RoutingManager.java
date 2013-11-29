@@ -78,6 +78,7 @@ public class RoutingManager {
         ShardRoutingState oldState = shard.state();
         
         shard.assignToNode( nodeId );
+        parent.node( nodeId ).add( shard );
 
         if ( oldState == ShardRoutingState.UNASSIGNED ) {
             inactiveShardCount++;

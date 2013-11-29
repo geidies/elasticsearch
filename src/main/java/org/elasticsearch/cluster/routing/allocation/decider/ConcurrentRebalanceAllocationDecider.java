@@ -73,7 +73,7 @@ public class ConcurrentRebalanceAllocationDecider extends AllocationDecider {
         if (clusterConcurrentRebalance == -1) {
             return Decision.YES;
         }
-        int rebalance = RoutingNodes.getInstance().getRelocatingShardCount();
+        int rebalance = allocation.routingNodes().getRelocatingShardCount();
         if (rebalance >= clusterConcurrentRebalance) {
             return Decision.NO;
         }

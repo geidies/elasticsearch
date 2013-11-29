@@ -59,26 +59,18 @@ public class RoutingNodes implements Iterable<RoutingNode> {
 
     private final Map<String, ObjectIntOpenHashMap<String>> nodesPerAttributeNames = new HashMap<String, ObjectIntOpenHashMap<String>>();
 
+    /**
+     * The {@link RoutingNode} managed by this need access to the {@link RoutingManager}.
+     * As they are not aware of the RoutingNodes, they need a static path to access it.
+     */
     private static RoutingNodes instance;
 
-    public static RoutingNodes getInstance() {
-        return instance;
-    }
-
-    public static RoutingNodes createInstance( ClusterState state ) {
-        instance = new RoutingNodes( state );
-        return getInstance();
-    }
-
-    public static RoutingManager manager() {
-        return getInstance().manager;
-    }
-
-    private RoutingNodes(ClusterState clusterState) {
-        this.metaData = clusterState.metaData();
-        this.blocks = clusterState.blocks();
+    public RoutingNodes(ClusterState clusterState) {
+        this.metaData     = clusterState.metaData();
+        this.blocks       = clusterState.blocks();
         this.routingTable = clusterState.routingTable();
-        this.manager = new RoutingManager( this );
+        this.instance     = this;
+        this.manager      = new RoutingManager( this );
 
         Map<String, List<MutableShardRouting>> nodesToShards = newHashMap();
         // fill in the nodeToShards with the "live" nodes
@@ -166,6 +158,28 @@ public class RoutingNodes implements Iterable<RoutingNode> {
 
     public ClusterBlocks getBlocks() {
         return this.blocks;
+    }
+    /**
+     * The {@link RoutingManager} instance that is used exclusively to 
+     * update ShardRoutings. This does book-keeping on the operations performed
+     * when transforming cluster state through e.g. assigning and relocating 
+     * shards; these numbers can be retrieved through helper methods
+     * {@link #hasUnassignedPrimaries()}
+     * {@link #hasUnassignedShards()}
+     * {@link #hasInactivePrimaries()}
+     * {@link #hasInactiveShards()}
+     * {@link #getRelocatingShardCount()}
+     *
+     * It also keeps track of the replica sets in the cluster, that is the primary
+     * and all replicas (if any), including initializing and relocating in case 
+     * relocation happens. This speeds up {@link #shardsRoutingFor(ShardRouting)} and
+     * {@link #findPrimaryForReplica(ShardRouting)}, which previously had to loop over
+     * all shards,
+     *
+     * @return the manager instance used to manage the ShardRoutings in these RoutingNodes
+     */
+    public RoutingManager manager() {
+        return this.manager;
     }
 
     public int requiredAverageNumberOfShardsPerNode() {
