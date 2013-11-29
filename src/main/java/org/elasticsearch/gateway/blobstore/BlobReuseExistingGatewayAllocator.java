@@ -252,7 +252,7 @@ public class BlobReuseExistingGatewayAllocator extends AbstractComponent impleme
                     }
                     // we found a match
                     changed = true;
-                    allocation.manager().assignShardToNode( shard, lastNodeMatched.nodeId() );
+                    allocation.routingNodes().assignShardToNode( shard, lastNodeMatched.nodeId() );
                     unassignedIterator.remove();
                 }
             }

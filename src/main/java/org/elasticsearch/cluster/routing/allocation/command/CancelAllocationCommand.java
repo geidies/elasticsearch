@@ -173,13 +173,13 @@ public class CancelAllocationCommand implements AllocationCommand {
                 if (shardRouting.initializing()) {
                     // the shard is initializing and recovering from another node, simply cancel the recovery
                     it.remove();
-                    allocation.manager().deassignShard( shardRouting );
+                    allocation.routingNodes().deassignShard( shardRouting );
                     // and cancel the relocating state from the shard its being relocated from
                     RoutingNode relocatingFromNode = allocation.routingNodes().node(shardRouting.relocatingNodeId());
                     if (relocatingFromNode != null) {
                         for (MutableShardRouting fromShardRouting : relocatingFromNode) {
                             if (fromShardRouting.shardId().equals(shardRouting.shardId()) && shardRouting.state() == RELOCATING) {
-                                allocation.manager().cancelRelocationForShard( fromShardRouting );
+                                allocation.routingNodes().cancelRelocationForShard( fromShardRouting );
                                 break;
                             }
                         }
@@ -200,7 +200,7 @@ public class CancelAllocationCommand implements AllocationCommand {
                         for (Iterator<MutableShardRouting> itX = initializingNode.iterator(); itX.hasNext(); ) {
                             MutableShardRouting initializingShardRouting = itX.next();
                             if (initializingShardRouting.shardId().equals(shardRouting.shardId()) && initializingShardRouting.state() == INITIALIZING) {
-                                allocation.manager().deassignShard( shardRouting );
+                                allocation.routingNodes().deassignShard( shardRouting );
                                 itX.remove();
                             }
                         }
