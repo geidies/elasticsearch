@@ -52,7 +52,6 @@ public class MutableShardRouting extends ImmutableShardRouting {
      */
     void assignToNode(String nodeId) {
         version++;
-        ShardRoutingState oldState = state;
 
         if (currentNodeId == null) {
             assert state == ShardRoutingState.UNASSIGNED;
@@ -123,7 +122,7 @@ public class MutableShardRouting extends ImmutableShardRouting {
      * Make the shard primary unless it's not Primary
      * //TODO: doc exception
      */
-    public void moveToPrimary() {
+    void moveToPrimary() {
         version++;
         if (primary) {
             throw new IllegalShardRoutingStateException(this, "Already primary, can't move to primary");
@@ -134,7 +133,7 @@ public class MutableShardRouting extends ImmutableShardRouting {
     /**
      * Set the primary shard to non-primary
      */
-    public void moveFromPrimary() {
+    void moveFromPrimary() {
         version++;
         if (!primary) {
             throw new IllegalShardRoutingStateException(this, "Not primary, can't move to replica");
