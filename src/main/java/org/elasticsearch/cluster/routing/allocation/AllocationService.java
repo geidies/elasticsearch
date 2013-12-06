@@ -269,8 +269,7 @@ public class AllocationService extends AbstractComponent {
                             assert !shardEntry2.primary();
 
                             changed = true;
-                            shardEntry.moveFromPrimary();
-                            shardEntry2.moveToPrimary();
+                            allocation.routingNodes().changePrimaryStatusForShard( shardEntry, shardEntry2 );
 
                             if (shardEntry2.relocatingNodeId() != null) {
                                 // its also relocating, make sure to move the other routing to primary
@@ -278,7 +277,7 @@ public class AllocationService extends AbstractComponent {
                                 if (node != null) {
                                     for (MutableShardRouting shardRouting : node) {
                                         if (shardRouting.shardId().equals(shardEntry2.shardId()) && !shardRouting.primary()) {
-                                            shardRouting.moveToPrimary();
+                                            allocation.routingNodes().changePrimaryStatusForShard( shardRouting );
                                             break;
                                         }
                                     }
@@ -371,7 +370,7 @@ public class AllocationService extends AbstractComponent {
                         relocatingNodeId = shard.relocatingNodeId();
                         if (!shard.started()) {
                             dirty = true;
-                            routingNodes.startedShard( shard );
+                            routingNodes.markShardStarted( shard );
                         }
                         break;
                     }

@@ -97,14 +97,14 @@ public class RoutingNode implements Iterable<MutableShardRouting> {
      * Remove a shard from this node
      * @param shardId id of the shard to remove
      */
-    void removeByShardId(int shardId) {
+    /* void removeByShardId(int shardId) {
         for (Iterator<MutableShardRouting> it = shards.iterator(); it.hasNext(); ) {
             MutableShardRouting shard = it.next();
             if (shard.id() == shardId) {
                 it.remove();
             }
         }
-    }
+    } */
 
     /**
      * Determine the number of shards with a specific state

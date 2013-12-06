@@ -34,6 +34,7 @@ import java.util.*;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Maps.newHashMap;
+import static com.google.common.collect.Sets.newHashSet;
 
 /**
  * {@link RoutingNodes} represents a copy the routing information contained in
@@ -53,24 +54,24 @@ public class RoutingNodes implements Iterable<RoutingNode> {
 
     private final List<MutableShardRouting> ignoredUnassigned = newArrayList();
 
-    private final RoutingManager manager;
+    private final Map<ShardId, List<MutableShardRouting>> replicaSets = newHashMap();
+
+    int unassignedPrimaryCount = 0;
+
+    int inactivePrimaryCount = 0;
+
+    int inactiveShardCount   = 0;
+
+    Set<ShardId> relocatingReplicaSets = new HashSet<ShardId>();
     
     private Set<ShardId> clearPostAllocationFlag;
 
     private final Map<String, ObjectIntOpenHashMap<String>> nodesPerAttributeNames = new HashMap<String, ObjectIntOpenHashMap<String>>();
 
-    /**
-     * The {@link RoutingNode} managed by this need access to the {@link RoutingManager}.
-     * As they are not aware of the RoutingNodes, they need a static path to access it.
-     */
-    private static RoutingNodes instance;
-
     public RoutingNodes(ClusterState clusterState) {
-        this.metaData     = clusterState.metaData();
-        this.blocks       = clusterState.blocks();
+        this.metaData = clusterState.metaData();
+        this.blocks = clusterState.blocks();
         this.routingTable = clusterState.routingTable();
-        this.instance     = this;
-        this.manager      = new RoutingManager( this );
 
         Map<String, List<MutableShardRouting>> nodesToShards = newHashMap();
         // fill in the nodeToShards with the "live" nodes
@@ -94,10 +95,10 @@ public class RoutingNodes implements Iterable<RoutingNode> {
                         }
                         MutableShardRouting sr = new MutableShardRouting(shard);
                         entries.add( sr );
-                        manager.addToReplicaSet( sr );
+                        addToReplicaSet( sr );
                         if (shard.relocating()) {
                             entries = nodesToShards.get(shard.relocatingNodeId());
-                            manager.relocatingReplicaSets.add( shard.shardId() );
+                            relocatingReplicaSets.add( shard.shardId() );
                             if (entries == null) {
                                 entries = newArrayList();
                                 nodesToShards.put(shard.relocatingNodeId(), entries);
@@ -107,19 +108,20 @@ public class RoutingNodes implements Iterable<RoutingNode> {
                             sr = new MutableShardRouting(shard.index(), shard.id(), shard.relocatingNodeId(),
                                     shard.currentNodeId(), shard.primary(), ShardRoutingState.INITIALIZING, shard.version());
                             entries.add( sr );
-                            manager.addToReplicaSet( sr );
+                            addToReplicaSet( sr );
                         }
                         else if ( !shard.active() ) { // shards that are initializing without being relocated
-                            if ( shard.primary() )
-                                manager.inactivePrimaryCount++;
-                            manager.inactiveShardCount++;
+                            if ( shard.primary() ) {
+                                inactivePrimaryCount++;
+                            }
+                            inactiveShardCount++;
                         }
                     } else {
                         MutableShardRouting sr = new MutableShardRouting(shard);
-                        manager.addToReplicaSet( sr );
+                        addToReplicaSet( sr );
                         unassigned.add( sr );
                         if ( shard.primary() )
-                            manager.unassignedPrimaryCount++;
+                            unassignedPrimaryCount++;
 
                     }
                 }
@@ -233,7 +235,7 @@ public class RoutingNodes implements Iterable<RoutingNode> {
     }
 
     public boolean hasUnassignedPrimaries() {
-        return manager.unassignedPrimaryCount > 0;
+        return unassignedPrimaryCount > 0;
     }
 
     public boolean hasUnassignedShards() {
@@ -241,23 +243,22 @@ public class RoutingNodes implements Iterable<RoutingNode> {
     }
 
     public boolean hasInactivePrimaries() {
-        return manager.inactivePrimaryCount > 0;
+        return inactivePrimaryCount > 0;
     }
 
     public boolean hasInactiveShards() {
-        return manager.inactiveShardCount > 0;
+        return inactiveShardCount > 0;
     }
 
     public int getRelocatingShardCount() {
-        return manager.relocatingReplicaSets.size();
+        return relocatingReplicaSets.size();
     }
 
     public MutableShardRouting findPrimaryForReplica(ShardRouting shard) {
         assert !shard.primary();
         List<MutableShardRouting> shards = shardsRoutingFor( shard );
-        for (int i = 0; i < shards.size(); i++) {
-            MutableShardRouting shardRouting = shards.get(i);
-            if ( shardRouting.primary() ) {
+        for ( MutableShardRouting shardRouting : shardsRoutingFor(shard) ) {
+            if (shardRouting.primary()) {
                 return shardRouting;
             }
         }
@@ -270,10 +271,8 @@ public class RoutingNodes implements Iterable<RoutingNode> {
 
     public List<MutableShardRouting> shardsRoutingFor(String index, int shardId) {
         ShardId sid = new ShardId( index, shardId );
-        List<MutableShardRouting> shards = manager.replicaSetFor( sid );
-        if ( shards == null ) {
-            shards = newArrayList();
-        }
+        List<MutableShardRouting> shards = replicaSetFor( sid );
+        assert shards != null;
         // no need to check unassigned array, since the ShardRoutings are in the replica set.
         return shards;
     }
@@ -329,251 +328,224 @@ public class RoutingNodes implements Iterable<RoutingNode> {
     }
 
     /**
-     * @see {@link RoutingManager#assignShardToNode(MutableShardRouting,String)}
+     * calculates RoutingNodes statistics by iterating over all {@link MutableShardRouting}s
+     * in the cluster to ensure the {@link RoutingManager} book-keeping is correct.
+     * For performance reasons, this should only be called from test cases.
+     *
+     * @return true if all counts are the same, false if either of the book-keeping numbers is off.
+     */
+    public boolean assertShardStats() {
+       int unassignedPrimaryCount = 0;
+       int inactivePrimaryCount = 0;
+       int inactiveShardCount = 0;
+       int totalShards = 0;
+
+       Set<ShardId> seenShards = newHashSet();
+
+       for (RoutingNode node : this) {
+           for (MutableShardRouting shard : node) {
+
+               if (shard.primary() && shard.unassigned()) {
+                   unassignedPrimaryCount++;
+               }
+               if (shard.primary() && shard.initializing()) {
+                   boolean hasRelocating = false;
+                   for (MutableShardRouting replica : replicaSetFor( shard.shardId() )) {
+                       if (replica.relocating()) {
+                           hasRelocating = true;
+                       }
+                   }
+                   if (!hasRelocating) {
+                       inactivePrimaryCount++;
+                   }
+               }
+               if (!shard.active()) {
+                   inactiveShardCount++;
+               }
+               totalShards++;
+               seenShards.add( shard.shardId() );
+           }
+       }
+
+       int shardsInReplicaSetsCount = 0;
+       for ( ShardId shardId : seenShards ) {
+           shardsInReplicaSetsCount += replicaSetFor( shardId ).size();
+       }
+
+
+       return unassignedPrimaryCount == this.unassignedPrimaryCount 
+              && inactivePrimaryCount == this.inactivePrimaryCount
+              && inactiveShardCount == this.inactiveShardCount
+              && shardsInReplicaSetsCount == totalShards;
+    }
+
+    /**
+     * Assign a shard to a node. This will increment the inactiveShardCount counter
+     * and the inactivePrimaryCount counter if the shard is the primary.
+     * In case the shard is already assigned and started, it will be marked as 
+     * relocating, which is accounted for, too, so the number of concurrent relocations
+     * can be retrieved easily.
+     * This method can be called several times for the same shard, only the first time
+     * will change the state.
+     *
+     * INITIALIZING => INITIALIZING
+     * UNASSIGNED   => INITIALIZING
+     * STARTED      => RELOCATING
+     * RELOCATING   => RELOCATING
+     *
+     * @param shard the shard to be assigned
+     * @param nodeId the nodeId this shard should initialize on or relocate from
      */
     public void assignShardToNode( MutableShardRouting shard, String nodeId ) {
-        manager.assignShardToNode( shard, nodeId );
+
+        // state will not change if the shard is already initializing.
+        ShardRoutingState oldState = shard.state();
+        
+        shard.assignToNode( nodeId );
+        node( nodeId ).add( shard );
+
+        if ( oldState == ShardRoutingState.UNASSIGNED ) {
+            inactiveShardCount++;
+            if ( shard.primary() ) {
+                unassignedPrimaryCount--;
+                inactivePrimaryCount++;
+            }
+        }
+        if ( shard.state() == ShardRoutingState.RELOCATING ) {
+            // this a HashSet. double add no worry.
+            relocatingReplicaSets.add( shard.shardId() ); 
+        }
+        // possibly double/triple adding it to a replica set doesn't matter
+        // but make sure we know about the shard.
+        addToReplicaSet( shard );
     }
 
     /**
-     * @see {@link RoutingManager#relocateShard(MutableShardRouting,String)}
+     * Relocate a shard to another node.
+     *
+     * STARTED => RELOCATING
+     *
+     * @param shard the shard to relocate
+     * @param nodeId the node to relocate to
      */
     public void relocateShard( MutableShardRouting shard, String nodeId ) {
-        manager.relocateShard( shard, nodeId );
+        relocatingReplicaSets.add( shard.shardId() );
+        shard.relocate( nodeId );
     }
 
     /**
-     * @see {@link RoutingManager#cancelRelocationForShard(MutableShardRouting)}
+     * Cancels the relocation of a shard.
+     *
+     * RELOCATING => STARTED
+     *
+     * @param shard the shard that was relocating previously and now should be started again.
      */
     public void cancelRelocationForShard( MutableShardRouting shard ) {
-        manager.cancelRelocationForShard( shard );
+        relocatingReplicaSets.remove( shard.shardId() );
+        shard.cancelRelocation();
     }
 
     /**
-     * @see {@link RoutingManager#deassignShard(MutableShardRouting)}
+     * Unassigns shard from a node.
+     * Both relocating and started shards that are deallocated need a new 
+     * primary elected.
+     *
+     * RELOCATING   => null
+     * STARTED      => null
+     * INITIALIZING => null
+     *
+     * @param shard the shard to be unassigned.
      */
     public void deassignShard( MutableShardRouting shard ) {
-        manager.deassignShard( shard );
+        if ( shard.state() == ShardRoutingState.RELOCATING ) {
+            cancelRelocationForShard( shard );
+        }
+        if ( shard.primary() )
+            unassignedPrimaryCount++;
+        shard.deassignNode();
     }
 
     /**
-     * @see {@link RoutingManager#startedShard(MutableShardRouting)}
+     * Mark a shard as started.
+     * Decreases the counters and marks a replication complete or failed,
+     * which is the same for accounting in this class.
+     *
+     * INITIALIZING => STARTED
+     * RELOCATIng   => STARTED
+     *
+     * @param shard the shard to be marked as started
      */
-    public void startedShard( MutableShardRouting shard ) {
-        manager.startedShard( shard );
+    public void markShardStarted( MutableShardRouting shard ) {
+        if ( shard.state() == ShardRoutingState.INITIALIZING 
+             && shard.relocatingNodeId() != null ) {
+            relocatingReplicaSets.remove( shard.shardId() );
+        }
+        inactiveShardCount--;
+        if ( shard.primary() ) {
+            inactivePrimaryCount--;
+        }
+        shard.moveToStarted();
     }
+
     /**
-     * @see {@link RoutingManager#replicaSetFor(MutableShardRouting)}
+     * Return a list of shards belonging to a replica set
+     * 
+     * @param shard the shard for which to retrieve the replica set
+     * @return an unmodifiable List of the replica set
      */
     public List<MutableShardRouting> replicaSetFor( MutableShardRouting shard ) {
-        return manager.replicaSetFor( shard );
+        return replicaSetFor( shard.shardId() );
     }
 
     /**
-     * @see {@link RoutingManager#replicaSetFor(ShardId)}
+     * Return a list of shards belonging to a replica set
+     * 
+     * @param shardId the {@link ShardId} for which to retrieve the replica set
+     * @return an unmodifiable List of the replica set
      */
     public List<MutableShardRouting> replicaSetFor( ShardId shardId ) {
-        return manager.replicaSetFor( shardId );
+        List<MutableShardRouting> replicaSet = replicaSets.get( shardId );
+        assert replicaSet != null;
+        return Collections.unmodifiableList( replicaSet );
     }
 
     /**
-     * The {@link RoutingManager} instance that is used exclusively to 
-     * update ShardRoutings. This does book-keeping on the operations performed
-     * when transforming cluster state through e.g. assigning and relocating 
-     * shards; these numbers can be retrieved through helper methods
-     * {@link #hasUnassignedPrimaries()}
-     * {@link #hasUnassignedShards()}
-     * {@link #hasInactivePrimaries()}
-     * {@link #hasInactiveShards()}
-     * {@link #getRelocatingShardCount()}
+     * Let this class know about a shard, which it then sorts into 
+     * its replica set. Package private as only {@link RoutingNodes} 
+     * should notify this class of shards during initialization.
      *
-     * It also keeps track of the replica sets in the cluster, that is the primary
-     * and all replicas (if any), including initializing and relocating in case 
-     * relocation happens. This speeds up {@link #shardsRoutingFor(ShardRouting)} and
-     * {@link #findPrimaryForReplica(ShardRouting)}, which previously had to loop over
-     * all shards,
-     *
-     * @return the manager instance used to manage the ShardRoutings in these RoutingNodes
+     * @param shard the shard to be sorted into its replica set
      */
-    private class RoutingManager {
+    private void addToReplicaSet( MutableShardRouting shard ) {
+        List<MutableShardRouting> replicaSet = replicaSets.get( shard.shardId() );
+        if ( replicaSet == null ) {
+            replicaSet = new ArrayList<MutableShardRouting>();
+            replicaSets.put( shard.shardId(), replicaSet );
+        }
+        replicaSet.add( shard );
+    }
 
-        private RoutingNodes parent;
-        
-        protected RoutingManager( RoutingNodes parent ) {
-            this.parent = parent;
-        } 
+    /**
+     * marks a replica set as relocating. 
+     *
+     * @param shard a member of the relocating replica set
+     */
+    private void markRelocating( MutableShardRouting shard ) {
+        relocatingReplicaSets.add( shard.shardId() );
+    }
 
-        private final Map<ShardId, List<MutableShardRouting>> replicaSets = newHashMap();
-
-        /*
-         * all package-private
-         */
-        int unassignedPrimaryCount = 0;
-
-        int inactivePrimaryCount = 0;
-
-        int inactiveShardCount   = 0;
-
-        Set<ShardId> relocatingReplicaSets = new HashSet<ShardId>();
-
-
-        /**
-         * Assign a shard to a node. This will increment the inactiveShardCount counter
-         * and the inactivePrimaryCount counter if the shard is the primary.
-         * In case the shard is already assigned and started, it will be marked as 
-         * relocating, which is accounted for, too, so the number of concurrent relocations
-         * can be retrieved easily.
-         * This method can be called several times for the same shard, only the first time
-         * will change the state.
-         *
-         * INITIALIZING => INITIALIZING
-         * UNASSIGNED   => INITIALIZING
-         * STARTED      => RELOCATING
-         * RELOCATING   => RELOCATING
-         *
-         * @param shard the shard to be assigned
-         * @param nodeId the nodeId this shard should initialize on or relocate from
-         */
-        protected void assignShardToNode( MutableShardRouting shard, String nodeId ) {
-
-            // state will not change if the shard is already initializing.
-            ShardRoutingState oldState = shard.state();
-            
-            shard.assignToNode( nodeId );
-            parent.node( nodeId ).add( shard );
-
-            if ( oldState == ShardRoutingState.UNASSIGNED ) {
-                inactiveShardCount++;
-                if ( shard.primary() ) {
-                    unassignedPrimaryCount--;
-                    inactivePrimaryCount++;
-                }
+    /**
+     * swaps the status of a shard, making replicas primary and vice versa.
+     * 
+     * @param shard the shard to have its primary status swapped.
+     */
+    public void changePrimaryStatusForShard( MutableShardRouting... shards ) {
+        for (MutableShardRouting shard : shards) {
+            if (shard.primary()) {
+                shard.moveFromPrimary();
+            } else {
+                shard.moveToPrimary();
             }
-            if ( shard.state() == ShardRoutingState.RELOCATING ) {
-                // this a HashSet. double add no worry.
-                relocatingReplicaSets.add( shard.shardId() ); 
-            }
-            // possibly double/triple adding it to a replica set doesn't matter
-            // but make sure we know about the shard.
-            addToReplicaSet( shard );
-        }
-        /**
-         * Relocate a shard to another node.
-         *
-         * STARTED => RELOCATING
-         *
-         * @param shard the shard to relocate
-         * @param nodeId the node to relocate to
-         */
-        protected void relocateShard( MutableShardRouting shard, String nodeId ) {
-            relocatingReplicaSets.add( shard.shardId() );
-            shard.relocate( nodeId );
-        }
-
-
-        /**
-         * Cancels the relocation of a shard.
-         *
-         * RELOCATING => STARTED
-         *
-         * @param shard the shard that was relocating previously and now should be started again.
-         */
-        protected void cancelRelocationForShard( MutableShardRouting shard ) {
-            relocatingReplicaSets.remove( shard.shardId() );
-            shard.cancelRelocation();
-        }
-
-        /**
-         * Unassigns shard from a node.
-         * Both relocating and started shards that are deallocated need a new 
-         * primary elected.
-         *
-         * RELOCATING   => null
-         * STARTED      => null
-         * INITIALIZING => null
-         *
-         * @param shard the shard to be unassigned.
-         */
-        protected void deassignShard( MutableShardRouting shard ) {
-            if ( shard.state() == ShardRoutingState.RELOCATING ) {
-                cancelRelocationForShard( shard );
-            }
-            if ( shard.primary() )
-                unassignedPrimaryCount++;
-            shard.deassignNode();
-        }
-
-        /**
-         * Mark a shard as started.
-         * Decreases the counters and marks a replication complete or failed,
-         * which is the same for accounting in this class.
-         *
-         * INITIALIZING => STARTED
-         * RELOCATIng   => STARTED
-         *
-         * @param shard the shard to be marked as started
-         */
-        protected void startedShard( MutableShardRouting shard ) {
-            if ( shard.state() == ShardRoutingState.INITIALIZING 
-                 && shard.relocatingNodeId() != null ) {
-                relocatingReplicaSets.remove( shard.shardId() );
-            }
-            inactiveShardCount--;
-            if ( shard.primary() ) {
-                inactivePrimaryCount--;
-            }
-            shard.moveToStarted();
-        }
-
-
-        /**
-         * Return a list of shards belonging to a replica set
-         * 
-         * @param shard the shard for which to retrieve the replica set
-         * @return an unmodifiable List of the replica set
-         */
-        protected List<MutableShardRouting> replicaSetFor( MutableShardRouting shard ) {
-            return replicaSetFor( shard.shardId() );
-        }
-
-        /**
-         * Return a list of shards belonging to a replica set
-         * 
-         * @param shardId the {@link ShardId} for which to retrieve the replica set
-         * @return an unmodifiable List of the replica set
-         */
-        protected List<MutableShardRouting> replicaSetFor( ShardId shardId ) {
-            List<MutableShardRouting> replicaSet = replicaSets.get( shardId );
-            if ( replicaSet == null ) {
-                return null;
-            }
-            return Collections.unmodifiableList( replicaSet );
-        }
-
-        /**
-         * Let this class know about a shard, which it then sorts into 
-         * its replica set. Package private as only {@link RoutingNodes} 
-         * should notify this class of shards during initialization.
-         *
-         * @param shard the shard to be sorted into its replica set
-         */
-        protected void addToReplicaSet( MutableShardRouting shard ) {
-            List<MutableShardRouting> replicaSet = replicaSets.get( shard.shardId() );
-            if ( replicaSet == null ) {
-                replicaSet = new ArrayList<MutableShardRouting>();
-                replicaSets.put( shard.shardId(), replicaSet );
-            }
-            replicaSet.add( shard );
-        }
-
-        /**
-         * marks a replica set as relocating. package private as only 
-         * {@link RoutingNodes} should call it during initialization.
-         *
-         * @param shard a member of the relocating replica set
-         */
-        protected void markRelocating( MutableShardRouting shard ) {
-            relocatingReplicaSets.add( shard.shardId() );
         }
     }
 
