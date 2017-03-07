@@ -21,11 +21,12 @@ package org.elasticsearch.search.aggregations;
 
 import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.common.ParseField;
-import org.elasticsearch.common.ParseFieldMatcher;
+import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.io.stream.Writeable;
 import org.elasticsearch.common.lease.Releasable;
-import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.index.query.QueryParseContext;
 import org.elasticsearch.search.aggregations.bucket.BucketsAggregator;
-import org.elasticsearch.search.aggregations.support.AggregationContext;
 import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
@@ -40,27 +41,20 @@ public abstract class Aggregator extends BucketCollector implements Releasable {
     /**
      * Parses the aggregation request and creates the appropriate aggregator factory for it.
      *
-     * @see {@link AggregatorFactory}
-    */
+     * @see AggregationBuilder
+     */
+    @FunctionalInterface
     public interface Parser {
-
-        /**
-         * @return The aggregation type this parser is associated with.
-         */
-        String type();
-
         /**
          * Returns the aggregator factory with which this parser is associated, may return {@code null} indicating the
          * aggregation should be skipped (e.g. when trying to aggregate on unmapped fields).
          *
          * @param aggregationName   The name of the aggregation
-         * @param parser            The xcontent parser
-         * @param context           The search context
+         * @param context           The parse context
          * @return                  The resolved aggregator factory or {@code null} in case the aggregation should be skipped
          * @throws java.io.IOException      When parsing fails
          */
-        AggregatorFactory parse(String aggregationName, XContentParser parser, SearchContext context) throws IOException;
-
+        AggregationBuilder parse(String aggregationName, QueryParseContext context) throws IOException;
     }
 
     /**
@@ -82,9 +76,9 @@ public abstract class Aggregator extends BucketCollector implements Releasable {
     public abstract String name();
 
     /**
-     * Return the {@link AggregationContext} attached with this {@link Aggregator}.
+     * Return the {@link SearchContext} attached with this {@link Aggregator}.
      */
-    public abstract AggregationContext context();
+    public abstract SearchContext context();
 
     /**
      * Return the parent aggregator.
@@ -107,7 +101,7 @@ public abstract class Aggregator extends BucketCollector implements Releasable {
     public abstract InternalAggregation buildEmptyAggregation();
 
     /** Aggregation mode for sub aggregations. */
-    public enum SubAggCollectionMode {
+    public enum SubAggCollectionMode implements Writeable {
 
         /**
          * Creates buckets and delegates to child aggregators in a single pass over
@@ -134,14 +128,27 @@ public abstract class Aggregator extends BucketCollector implements Releasable {
             return parseField;
         }
 
-        public static SubAggCollectionMode parse(String value, ParseFieldMatcher parseFieldMatcher) {
+        public static SubAggCollectionMode parse(String value) {
             SubAggCollectionMode[] modes = SubAggCollectionMode.values();
             for (SubAggCollectionMode mode : modes) {
-                if (parseFieldMatcher.match(value, mode.parseField)) {
+                if (mode.parseField.match(value)) {
                     return mode;
                 }
             }
             throw new ElasticsearchParseException("no [{}] found for value [{}]", KEY.getPreferredName(), value);
+        }
+
+        public static SubAggCollectionMode readFromStream(StreamInput in) throws IOException {
+            int ordinal = in.readVInt();
+            if (ordinal < 0 || ordinal >= values().length) {
+                throw new IOException("Unknown SubAggCollectionMode ordinal [" + ordinal + "]");
+            }
+            return values()[ordinal];
+        }
+
+        @Override
+        public void writeTo(StreamOutput out) throws IOException {
+            out.writeVInt(ordinal());
         }
     }
 }

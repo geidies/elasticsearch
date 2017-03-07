@@ -19,33 +19,33 @@
 
 package org.elasticsearch.transport;
 
+import org.elasticsearch.tasks.Task;
+import org.elasticsearch.tasks.TaskManager;
 
-import java.lang.reflect.Constructor;
+import java.io.IOException;
+import java.util.function.Supplier;
 
-/**
- *
- */
 public class RequestHandlerRegistry<Request extends TransportRequest> {
 
     private final String action;
-    private final Constructor<Request> requestConstructor;
     private final TransportRequestHandler<Request> handler;
     private final boolean forceExecution;
+    private final boolean canTripCircuitBreaker;
     private final String executor;
+    private final Supplier<Request> requestFactory;
+    private final TaskManager taskManager;
 
-    RequestHandlerRegistry(String action, Class<Request> request, TransportRequestHandler<Request> handler,
-                           String executor, boolean forceExecution) {
+    public RequestHandlerRegistry(String action, Supplier<Request> requestFactory, TaskManager taskManager,
+                                  TransportRequestHandler<Request> handler, String executor, boolean forceExecution,
+                                  boolean canTripCircuitBreaker) {
         this.action = action;
-        try {
-            this.requestConstructor = request.getDeclaredConstructor();
-        } catch (NoSuchMethodException e) {
-            throw new IllegalStateException("failed to create constructor (does it have a default constructor?) for request " + request, e);
-        }
-        this.requestConstructor.setAccessible(true);
+        this.requestFactory = requestFactory;
         assert newRequest() != null;
         this.handler = handler;
         this.forceExecution = forceExecution;
+        this.canTripCircuitBreaker = canTripCircuitBreaker;
         this.executor = executor;
+        this.taskManager = taskManager;
     }
 
     public String getAction() {
@@ -53,22 +53,75 @@ public class RequestHandlerRegistry<Request extends TransportRequest> {
     }
 
     public Request newRequest() {
-        try {
-            return requestConstructor.newInstance();
-        } catch (Exception e) {
-            throw new IllegalStateException("failed to instantiate request ", e);
-        }
+            return requestFactory.get();
     }
 
-    public TransportRequestHandler<Request> getHandler() {
-        return handler;
+    public void processMessageReceived(Request request, TransportChannel channel) throws Exception {
+        final Task task = taskManager.register(channel.getChannelType(), action, request);
+        if (task == null) {
+            handler.messageReceived(request, channel);
+        } else {
+            boolean success = false;
+            try {
+                handler.messageReceived(request, new TransportChannelWrapper(taskManager, task, channel), task);
+                success = true;
+            } finally {
+                if (success == false) {
+                    taskManager.unregister(task);
+                }
+            }
+        }
     }
 
     public boolean isForceExecution() {
         return forceExecution;
     }
 
+    public boolean canTripCircuitBreaker() {
+        return canTripCircuitBreaker;
+    }
+
     public String getExecutor() {
         return executor;
+    }
+
+    @Override
+    public String toString() {
+        return handler.toString();
+    }
+
+    private static class TransportChannelWrapper extends DelegatingTransportChannel {
+
+        private final Task task;
+
+        private final TaskManager taskManager;
+
+        TransportChannelWrapper(TaskManager taskManager, Task task, TransportChannel channel) {
+            super(channel);
+            this.task = task;
+            this.taskManager = taskManager;
+        }
+
+        @Override
+        public void sendResponse(TransportResponse response) throws IOException {
+            endTask();
+            super.sendResponse(response);
+        }
+
+        @Override
+        public void sendResponse(TransportResponse response, TransportResponseOptions options) throws IOException {
+            endTask();
+            super.sendResponse(response, options);
+        }
+
+        @Override
+        public void sendResponse(Exception exception) throws IOException {
+            endTask();
+            super.sendResponse(exception);
+        }
+
+        private void endTask() {
+            taskManager.unregister(task);
+        }
     }
 }

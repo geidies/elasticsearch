@@ -20,16 +20,16 @@
 package org.elasticsearch.common.settings.loader;
 
 import org.elasticsearch.ElasticsearchParseException;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.common.xcontent.XContentType;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static com.google.common.collect.Lists.newArrayList;
-import static com.google.common.collect.Maps.newHashMap;
 
 /**
  * Settings loader that loads (parses) the settings in a xcontent format by flattening them
@@ -39,24 +39,32 @@ public abstract class XContentSettingsLoader implements SettingsLoader {
 
     public abstract XContentType contentType();
 
+    private final boolean allowNullValues;
+
+    XContentSettingsLoader(boolean allowNullValues) {
+        this.allowNullValues = allowNullValues;
+    }
+
     @Override
     public Map<String, String> load(String source) throws IOException {
-        try (XContentParser parser = XContentFactory.xContent(contentType()).createParser(source)) {
+        // It is safe to use EMPTY here because this never uses namedObject
+        try (XContentParser parser = XContentFactory.xContent(contentType()).createParser(NamedXContentRegistry.EMPTY, source)) {
             return load(parser);
         }
     }
 
     @Override
     public Map<String, String> load(byte[] source) throws IOException {
-        try (XContentParser parser = XContentFactory.xContent(contentType()).createParser(source)) {
+        // It is safe to use EMPTY here because this never uses namedObject
+        try (XContentParser parser = XContentFactory.xContent(contentType()).createParser(NamedXContentRegistry.EMPTY, source)) {
             return load(parser);
         }
     }
 
     public Map<String, String> load(XContentParser jp) throws IOException {
         StringBuilder sb = new StringBuilder();
-        Map<String, String> settings = newHashMap();
-        List<String> path = newArrayList();
+        Map<String, String> settings = new HashMap<>();
+        List<String> path = new ArrayList<>();
         XContentParser.Token token = jp.nextToken();
         if (token == null) {
             return settings;
@@ -65,10 +73,29 @@ public abstract class XContentSettingsLoader implements SettingsLoader {
             throw new ElasticsearchParseException("malformed, expected settings to start with 'object', instead was [{}]", token);
         }
         serializeObject(settings, sb, path, jp, null);
+
+        // ensure we reached the end of the stream
+        XContentParser.Token lastToken = null;
+        try {
+            while (!jp.isClosed() && (lastToken = jp.nextToken()) == null);
+        } catch (Exception e) {
+            throw new ElasticsearchParseException(
+                    "malformed, expected end of settings but encountered additional content starting at line number: [{}], "
+                            + "column number: [{}]",
+                    e, jp.getTokenLocation().lineNumber, jp.getTokenLocation().columnNumber);
+        }
+        if (lastToken != null) {
+            throw new ElasticsearchParseException(
+                    "malformed, expected end of settings but encountered additional content starting at line number: [{}], "
+                            + "column number: [{}]",
+                    jp.getTokenLocation().lineNumber, jp.getTokenLocation().columnNumber);
+        }
+
         return settings;
     }
 
-    private void serializeObject(Map<String, String> settings, StringBuilder sb, List<String> path, XContentParser parser, String objFieldName) throws IOException {
+    private void serializeObject(Map<String, String> settings, StringBuilder sb, List<String> path, XContentParser parser,
+            String objFieldName) throws IOException {
         if (objFieldName != null) {
             path.add(objFieldName);
         }
@@ -83,9 +110,9 @@ public abstract class XContentSettingsLoader implements SettingsLoader {
             } else if (token == XContentParser.Token.FIELD_NAME) {
                 currentFieldName = parser.currentName();
             } else if (token == XContentParser.Token.VALUE_NULL) {
-                // ignore this
+                serializeValue(settings, sb, path, parser, currentFieldName, true);
             } else {
-                serializeValue(settings, sb, path, parser, currentFieldName);
+                serializeValue(settings, sb, path, parser, currentFieldName, false);
 
             }
         }
@@ -95,7 +122,8 @@ public abstract class XContentSettingsLoader implements SettingsLoader {
         }
     }
 
-    private void serializeArray(Map<String, String> settings, StringBuilder sb, List<String> path, XContentParser parser, String fieldName) throws IOException {
+    private void serializeArray(Map<String, String> settings, StringBuilder sb, List<String> path, XContentParser parser, String fieldName)
+            throws IOException {
         XContentParser.Token token;
         int counter = 0;
         while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
@@ -106,20 +134,44 @@ public abstract class XContentSettingsLoader implements SettingsLoader {
             } else if (token == XContentParser.Token.FIELD_NAME) {
                 fieldName = parser.currentName();
             } else if (token == XContentParser.Token.VALUE_NULL) {
+                serializeValue(settings, sb, path, parser, fieldName + '.' + (counter++), true);
                 // ignore
             } else {
-                serializeValue(settings, sb, path, parser, fieldName + '.' + (counter++));
+                serializeValue(settings, sb, path, parser, fieldName + '.' + (counter++), false);
             }
         }
     }
 
-    private void serializeValue(Map<String, String> settings, StringBuilder sb, List<String> path, XContentParser parser, String fieldName) throws IOException {
+    private void serializeValue(Map<String, String> settings, StringBuilder sb, List<String> path, XContentParser parser, String fieldName,
+            boolean isNull) throws IOException {
         sb.setLength(0);
         for (String pathEle : path) {
             sb.append(pathEle).append('.');
         }
         sb.append(fieldName);
-        settings.put(sb.toString(), parser.text());
-    }
+        String key = sb.toString();
+        String currentValue = isNull ? null : parser.text();
 
+        if (settings.containsKey(key)) {
+            throw new ElasticsearchParseException(
+                    "duplicate settings key [{}] found at line number [{}], column number [{}], previous value [{}], current value [{}]",
+                    key,
+                    parser.getTokenLocation().lineNumber,
+                    parser.getTokenLocation().columnNumber,
+                    settings.get(key),
+                    currentValue
+            );
+        }
+
+        if (currentValue == null && !allowNullValues) {
+            throw new ElasticsearchParseException(
+                    "null-valued setting found for key [{}] found at line number [{}], column number [{}]",
+                    key,
+                    parser.getTokenLocation().lineNumber,
+                    parser.getTokenLocation().columnNumber
+            );
+        }
+
+        settings.put(key, currentValue);
+    }
 }

@@ -154,6 +154,16 @@ public class IndicesOptions {
                 defaultSettings);
     }
 
+    /**
+     * Returns true if the name represents a valid name for one of the indices option
+     * false otherwise
+     */
+    public static boolean isIndicesOptions(String name) {
+        return "expand_wildcards".equals(name) || "expandWildcards".equals(name) ||
+                "ignore_unavailable".equals(name) || "ignoreUnavailable".equals(name) ||
+                "allow_no_indices".equals(name) || "allowNoIndices".equals(name);
+    }
+
     public static IndicesOptions fromParameters(Object wildcardsString, Object ignoreUnavailableString, Object allowNoIndicesString, IndicesOptions defaultSettings) {
         if (wildcardsString == null && ignoreUnavailableString == null && allowNoIndicesString == null) {
             return defaultSettings;
@@ -185,8 +195,8 @@ public class IndicesOptions {
 
         //note that allowAliasesToMultipleIndices is not exposed, always true (only for internal use)
         return fromOptions(
-                nodeBooleanValue(ignoreUnavailableString, defaultSettings.ignoreUnavailable()),
-                nodeBooleanValue(allowNoIndicesString, defaultSettings.allowNoIndices()),
+                nodeBooleanValue(ignoreUnavailableString, "ignore_unavailable", defaultSettings.ignoreUnavailable()),
+                nodeBooleanValue(allowNoIndicesString, "allow_no_indices", defaultSettings.allowNoIndices()),
                 expandWildcardsOpen,
                 expandWildcardsClosed,
                 defaultSettings.allowAliasesToMultipleIndices(),
@@ -269,7 +279,7 @@ public class IndicesOptions {
                 ", allow_no_indices=" + allowNoIndices() +
                 ", expand_wildcards_open=" + expandWildcardsOpen() +
                 ", expand_wildcards_closed=" + expandWildcardsClosed() +
-                ", allow_alisases_to_multiple_indices=" + allowAliasesToMultipleIndices() +
+                ", allow_aliases_to_multiple_indices=" + allowAliasesToMultipleIndices() +
                 ", forbid_closed_indices=" + forbidClosedIndices() +
                 ']';
     }

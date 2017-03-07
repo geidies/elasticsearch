@@ -35,7 +35,7 @@ final class BigObjectArray<T> extends AbstractBigArray implements ObjectArray<T>
     private Object[][] pages;
 
     /** Constructor. */
-    public BigObjectArray(long size, BigArrays bigArrays) {
+    BigObjectArray(long size, BigArrays bigArrays) {
         super(OBJECT_PAGE_SIZE, bigArrays, true);
         this.size = size;
         pages = new Object[numPages(size)][];
@@ -65,7 +65,7 @@ final class BigObjectArray<T> extends AbstractBigArray implements ObjectArray<T>
 
     @Override
     protected int numBytesPerElement() {
-        return RamUsageEstimator.NUM_BYTES_INT;
+        return Integer.BYTES;
     }
 
     /** Change the size of this array. Content between indexes <code>0</code> and <code>min(size(), newSize)</code> will be preserved. */

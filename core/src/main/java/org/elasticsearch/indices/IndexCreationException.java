@@ -26,12 +26,10 @@ import org.elasticsearch.index.Index;
 
 import java.io.IOException;
 
-/**
- */
 public class IndexCreationException extends ElasticsearchException implements ElasticsearchWrapperException {
 
-    public IndexCreationException(Index index, Throwable cause) {
-        super("failed to create index", cause);
+    public IndexCreationException(String index, Throwable cause) {
+        super("failed to create index [{}]", cause, index);
         setIndex(index);
     }
 

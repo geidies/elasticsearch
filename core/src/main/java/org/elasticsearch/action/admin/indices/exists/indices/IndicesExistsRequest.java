@@ -37,7 +37,7 @@ public class IndicesExistsRequest extends MasterNodeReadRequest<IndicesExistsReq
     private IndicesOptions indicesOptions = IndicesOptions.fromOptions(false, false, true, true);
 
     // for serialization
-    IndicesExistsRequest() {
+    public IndicesExistsRequest() {
 
     }
 
@@ -51,7 +51,7 @@ public class IndicesExistsRequest extends MasterNodeReadRequest<IndicesExistsReq
     }
 
     @Override
-    public IndicesExistsRequest indices(String[] indices) {
+    public IndicesExistsRequest indices(String... indices) {
         this.indices = indices;
         return this;
     }
@@ -61,8 +61,15 @@ public class IndicesExistsRequest extends MasterNodeReadRequest<IndicesExistsReq
         return indicesOptions;
     }
 
-    public IndicesExistsRequest indicesOptions(IndicesOptions indicesOptions) {
-        this.indicesOptions = indicesOptions;
+    public IndicesExistsRequest expandWilcardsOpen(boolean expandWildcardsOpen) {
+        this.indicesOptions = IndicesOptions.fromOptions(indicesOptions.ignoreUnavailable(), indicesOptions.allowNoIndices(),
+                expandWildcardsOpen, indicesOptions.expandWildcardsClosed());
+        return this;
+    }
+
+    public IndicesExistsRequest expandWilcardsClosed(boolean expandWildcardsClosed) {
+        this.indicesOptions = IndicesOptions.fromOptions(indicesOptions.ignoreUnavailable(), indicesOptions.allowNoIndices(),
+                indicesOptions.expandWildcardsOpen(), expandWildcardsClosed);
         return this;
     }
 

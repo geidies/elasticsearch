@@ -19,9 +19,11 @@
 
 package org.elasticsearch.cluster.metadata;
 
-import com.google.common.collect.ImmutableList;
 import org.elasticsearch.ElasticsearchParseException;
 import org.elasticsearch.cluster.AbstractDiffable;
+import org.elasticsearch.cluster.AbstractNamedDiffable;
+import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.cluster.NamedDiff;
 import org.elasticsearch.cluster.metadata.MetaData.Custom;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -33,20 +35,18 @@ import org.elasticsearch.common.xcontent.XContentParser;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Contains metadata about registered snapshot repositories
  */
-public class RepositoriesMetaData extends AbstractDiffable<Custom> implements MetaData.Custom {
+public class RepositoriesMetaData extends AbstractNamedDiffable<Custom> implements Custom {
 
     public static final String TYPE = "repositories";
 
-    public static final RepositoriesMetaData PROTO = new RepositoriesMetaData();
-
-    private final ImmutableList<RepositoryMetaData> repositories;
+    private final List<RepositoryMetaData> repositories;
 
     /**
      * Constructs new repository metadata
@@ -54,7 +54,7 @@ public class RepositoriesMetaData extends AbstractDiffable<Custom> implements Me
      * @param repositories list of repositories
      */
     public RepositoriesMetaData(RepositoryMetaData... repositories) {
-        this.repositories = ImmutableList.copyOf(repositories);
+        this.repositories = Arrays.asList(repositories);
     }
 
     /**
@@ -62,7 +62,7 @@ public class RepositoriesMetaData extends AbstractDiffable<Custom> implements Me
      *
      * @return list of repositories
      */
-    public ImmutableList<RepositoryMetaData> repositories() {
+    public List<RepositoryMetaData> repositories() {
         return this.repositories;
     }
 
@@ -101,20 +101,20 @@ public class RepositoriesMetaData extends AbstractDiffable<Custom> implements Me
      * {@inheritDoc}
      */
     @Override
-    public String type() {
+    public String getWriteableName() {
         return TYPE;
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public Custom readFrom(StreamInput in) throws IOException {
+    public RepositoriesMetaData(StreamInput in) throws IOException {
         RepositoryMetaData[] repository = new RepositoryMetaData[in.readVInt()];
         for (int i = 0; i < repository.length; i++) {
-            repository[i] = RepositoryMetaData.readFrom(in);
+            repository[i] = new RepositoryMetaData(in);
         }
-        return new RepositoriesMetaData(repository);
+        this.repositories = Arrays.asList(repository);
+    }
+
+    public static NamedDiff<Custom> readDiffFrom(StreamInput in) throws  IOException {
+        return readDiffFrom(Custom.class, TYPE, in);
     }
 
     /**
@@ -128,11 +128,7 @@ public class RepositoriesMetaData extends AbstractDiffable<Custom> implements Me
         }
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public RepositoriesMetaData fromXContent(XContentParser parser) throws IOException {
+    public static RepositoriesMetaData fromXContent(XContentParser parser) throws IOException {
         XContentParser.Token token;
         List<RepositoryMetaData> repository = new ArrayList<>();
         while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
@@ -155,7 +151,7 @@ public class RepositoriesMetaData extends AbstractDiffable<Custom> implements Me
                             if (parser.nextToken() != XContentParser.Token.START_OBJECT) {
                                 throw new ElasticsearchParseException("failed to parse repository [{}], incompatible params", name);
                             }
-                            settings = Settings.settingsBuilder().put(SettingsLoader.Helper.loadNestedFromMap(parser.mapOrdered())).build();
+                            settings = Settings.builder().put(SettingsLoader.Helper.loadNestedFromMap(parser.mapOrdered())).build();
                         } else {
                             throw new ElasticsearchParseException("failed to parse repository [{}], unknown field [{}]", name, currentFieldName);
                         }
@@ -196,10 +192,9 @@ public class RepositoriesMetaData extends AbstractDiffable<Custom> implements Me
      * @param repository repository metadata
      * @param builder    XContent builder
      * @param params     serialization parameters
-     * @throws IOException
      */
     public static void toXContent(RepositoryMetaData repository, XContentBuilder builder, ToXContent.Params params) throws IOException {
-        builder.startObject(repository.name(), XContentBuilder.FieldCaseConversion.NONE);
+        builder.startObject(repository.name());
         builder.field("type", repository.type());
         builder.startObject("settings");
         repository.settings().toXContent(builder, params);

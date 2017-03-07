@@ -20,6 +20,7 @@
 package org.elasticsearch.action.termvectors;
 
 import com.carrotsearch.hppc.IntArrayList;
+import org.elasticsearch.action.ActionRequestValidationException;
 import org.elasticsearch.action.support.single.shard.SingleShardRequest;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -36,15 +37,20 @@ public class MultiTermVectorsShardRequest extends SingleShardRequest<MultiTermVe
     IntArrayList locations;
     List<TermVectorsRequest> requests;
 
-    MultiTermVectorsShardRequest() {
+    public MultiTermVectorsShardRequest() {
 
     }
 
-    MultiTermVectorsShardRequest(MultiTermVectorsRequest request, String index, int shardId) {
-        super(request, index);
+    MultiTermVectorsShardRequest(String index, int shardId) {
+        super(index);
         this.shardId = shardId;
         locations = new IntArrayList();
         requests = new ArrayList<>();
+    }
+
+    @Override
+    public ActionRequestValidationException validate() {
+        return super.validateNonNullIndex();
     }
 
     public int shardId() {

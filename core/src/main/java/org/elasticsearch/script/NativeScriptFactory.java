@@ -29,7 +29,6 @@ import java.util.Map;
  *
  * @see AbstractExecutableScript
  * @see AbstractSearchScript
- * @see AbstractFloatSearchScript
  * @see AbstractLongSearchScript
  * @see AbstractDoubleSearchScript
  */
@@ -41,4 +40,16 @@ public interface NativeScriptFactory {
      * @param params The parameters passed to the script. Can be <tt>null</tt>.
      */
     ExecutableScript newScript(@Nullable Map<String, Object> params);
+
+    /**
+     * Indicates if document scores may be needed by the produced scripts.
+     *
+     * @return {@code true} if scores are needed.
+     */
+    boolean needsScores();
+
+    /**
+     * Returns the name of the script factory
+     */
+    String getName();
 }

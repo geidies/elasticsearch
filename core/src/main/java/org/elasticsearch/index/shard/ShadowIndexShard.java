@@ -18,34 +18,28 @@
  */
 package org.elasticsearch.index.shard;
 
-import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.routing.ShardRouting;
 import org.elasticsearch.common.Nullable;
-import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.util.BigArrays;
-import org.elasticsearch.index.IndexService;
-import org.elasticsearch.index.aliases.IndexAliasesService;
+import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.index.cache.IndexCache;
-import org.elasticsearch.index.codec.CodecService;
-import org.elasticsearch.index.deletionpolicy.SnapshotDeletionPolicy;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.engine.EngineConfig;
 import org.elasticsearch.index.engine.EngineFactory;
 import org.elasticsearch.index.fielddata.IndexFieldDataService;
 import org.elasticsearch.index.mapper.MapperService;
 import org.elasticsearch.index.merge.MergeStats;
-import org.elasticsearch.index.percolator.stats.ShardPercolateService;
-import org.elasticsearch.index.query.IndexQueryParserService;
-import org.elasticsearch.index.settings.IndexSettingsService;
+import org.elasticsearch.index.seqno.SeqNoStats;
 import org.elasticsearch.index.similarity.SimilarityService;
 import org.elasticsearch.index.store.Store;
-import org.elasticsearch.index.termvectors.ShardTermVectorsService;
-import org.elasticsearch.indices.IndicesLifecycle;
-import org.elasticsearch.indices.IndicesWarmer;
-import org.elasticsearch.indices.cache.query.IndicesQueryCache;
+import org.elasticsearch.index.translog.Translog;
+import org.elasticsearch.index.translog.TranslogStats;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * ShadowIndexShard extends {@link IndexShard} to add file synchronization
@@ -55,38 +49,28 @@ import java.io.IOException;
  */
 public final class ShadowIndexShard extends IndexShard {
 
-    @Inject
-    public ShadowIndexShard(ShardId shardId, IndexSettingsService indexSettingsService,
-                            IndicesLifecycle indicesLifecycle, Store store, StoreRecoveryService storeRecoveryService,
-                            ThreadPool threadPool, MapperService mapperService,
-                            IndexQueryParserService queryParserService, IndexCache indexCache,
-                            IndexAliasesService indexAliasesService, IndicesQueryCache indicesQueryCache,
-                            ShardPercolateService shardPercolateService, CodecService codecService,
-                            ShardTermVectorsService termVectorsService, IndexFieldDataService indexFieldDataService,
-                            IndexService indexService, @Nullable IndicesWarmer warmer,
-                            SnapshotDeletionPolicy deletionPolicy, SimilarityService similarityService,
-                            EngineFactory factory, ClusterService clusterService,
-                            ShardPath path, BigArrays bigArrays) throws IOException {
-        super(shardId, indexSettingsService, indicesLifecycle, store, storeRecoveryService,
-                threadPool, mapperService, queryParserService, indexCache, indexAliasesService,
-                indicesQueryCache, shardPercolateService, codecService,
-                termVectorsService, indexFieldDataService, indexService,
-                warmer, deletionPolicy, similarityService,
-                factory, clusterService, path, bigArrays);
+    public ShadowIndexShard(ShardRouting shardRouting, IndexSettings indexSettings, ShardPath path, Store store, IndexCache indexCache,
+                            MapperService mapperService, SimilarityService similarityService, IndexFieldDataService indexFieldDataService,
+                            @Nullable EngineFactory engineFactory, IndexEventListener indexEventListener, IndexSearcherWrapper wrapper,
+                            ThreadPool threadPool, BigArrays bigArrays, Engine.Warmer engineWarmer,
+                            List<SearchOperationListener> searchOperationListeners) throws IOException {
+        super(shardRouting, indexSettings, path, store, indexCache, mapperService, similarityService, indexFieldDataService, engineFactory,
+            indexEventListener, wrapper, threadPool, bigArrays, engineWarmer, () -> {
+            }, searchOperationListeners, Collections.emptyList());
     }
 
     /**
      * In addition to the regular accounting done in
-     * {@link IndexShard#updateRoutingEntry(org.elasticsearch.cluster.routing.ShardRouting, boolean)},
+     * {@link IndexShard#updateRoutingEntry(ShardRouting)},
      * if this shadow replica needs to be promoted to a primary, the shard is
      * failed in order to allow a new primary to be re-allocated.
      */
     @Override
-    public void updateRoutingEntry(ShardRouting newRouting, boolean persistState) {
-        if (newRouting.primary() == true) {// becoming a primary
+    public void updateRoutingEntry(ShardRouting newRouting) throws IOException {
+        if (newRouting.primary()) {// becoming a primary
             throw new IllegalStateException("can't promote shard to primary");
         }
-        super.updateRoutingEntry(newRouting, persistState);
+        super.updateRoutingEntry(newRouting);
     }
 
     @Override
@@ -95,18 +79,66 @@ public final class ShadowIndexShard extends IndexShard {
     }
 
     @Override
+    public SeqNoStats seqNoStats() {
+        return null;
+    }
+
+    @Override
     public boolean canIndex() {
         return false;
     }
 
     @Override
-    protected Engine newEngine(boolean skipInitialTranslogRecovery, EngineConfig config) {
+    protected Engine newEngine(EngineConfig config) {
         assert this.shardRouting.primary() == false;
-        assert skipInitialTranslogRecovery : "can not recover from gateway";
+        assert config.getOpenMode() == EngineConfig.OpenMode.OPEN_INDEX_CREATE_TRANSLOG;
         return engineFactory.newReadOnlyEngine(config);
     }
 
-    public boolean allowsPrimaryPromotion() {
+    @Override
+    protected RefreshListeners buildRefreshListeners() {
+        // ShadowEngine doesn't have a translog so it shouldn't try to support RefreshListeners.
+        return null;
+    }
+
+    @Override
+    public boolean shouldFlush() {
+        // we don't need to flush since we don't write - all dominated by the primary
         return false;
     }
+
+    @Override
+    public TranslogStats translogStats() {
+        return null; // shadow engine has no translog
+    }
+
+    @Override
+    public void updateGlobalCheckpointOnReplica(long checkpoint) {
+    }
+
+    @Override
+    public long getLocalCheckpoint() {
+        return -1;
+    }
+
+    @Override
+    public long getGlobalCheckpoint() {
+        return -1;
+    }
+
+    @Override
+    public void addRefreshListener(Translog.Location location, Consumer<Boolean> listener) {
+        throw new UnsupportedOperationException("Can't listen for a refresh on a shadow engine because it doesn't have a translog");
+    }
+
+    @Override
+    public Store.MetadataSnapshot snapshotStoreMetadata() throws IOException {
+        throw new UnsupportedOperationException("can't snapshot the directory as the primary may change it underneath us");
+    }
+
+    @Override
+    protected void onNewEngine(Engine newEngine) {
+        // nothing to do here - the superclass sets the translog on some listeners but we don't have such a thing
+    }
+
 }

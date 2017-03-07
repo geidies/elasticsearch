@@ -23,9 +23,7 @@ import org.elasticsearch.cluster.SnapshotsInProgress;
 import org.elasticsearch.cluster.routing.RoutingNode;
 import org.elasticsearch.cluster.routing.ShardRouting;
 import org.elasticsearch.cluster.routing.allocation.RoutingAllocation;
-import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.node.settings.NodeSettingsService;
 
 /**
  * This {@link org.elasticsearch.cluster.routing.allocation.decider.AllocationDecider} prevents shards that
@@ -36,44 +34,13 @@ public class SnapshotInProgressAllocationDecider extends AllocationDecider {
     public static final String NAME = "snapshot_in_progress";
 
     /**
-     * Disables relocation of shards that are currently being snapshotted.
-     */
-    public static final String CLUSTER_ROUTING_ALLOCATION_SNAPSHOT_RELOCATION_ENABLED = "cluster.routing.allocation.snapshot.relocation_enabled";
-
-    class ApplySettings implements NodeSettingsService.Listener {
-        @Override
-        public void onRefreshSettings(Settings settings) {
-            boolean newEnableRelocation = settings.getAsBoolean(CLUSTER_ROUTING_ALLOCATION_SNAPSHOT_RELOCATION_ENABLED, enableRelocation);
-            if (newEnableRelocation != enableRelocation) {
-                logger.info("updating [{}] from [{}], to [{}]", CLUSTER_ROUTING_ALLOCATION_SNAPSHOT_RELOCATION_ENABLED, enableRelocation, newEnableRelocation);
-                enableRelocation = newEnableRelocation;
-            }
-        }
-    }
-
-    private volatile boolean enableRelocation = false;
-
-    /**
-     * Creates a new {@link org.elasticsearch.cluster.routing.allocation.decider.SnapshotInProgressAllocationDecider} instance
-     */
-    public SnapshotInProgressAllocationDecider() {
-        this(Settings.Builder.EMPTY_SETTINGS);
-    }
-
-    /**
-     * Creates a new {@link org.elasticsearch.cluster.routing.allocation.decider.SnapshotInProgressAllocationDecider} instance from given settings
+     * Creates a new {@link org.elasticsearch.cluster.routing.allocation.decider.SnapshotInProgressAllocationDecider} instance from
+     * given settings
      *
      * @param settings {@link org.elasticsearch.common.settings.Settings} to use
      */
     public SnapshotInProgressAllocationDecider(Settings settings) {
-        this(settings, new NodeSettingsService(settings));
-    }
-
-    @Inject
-    public SnapshotInProgressAllocationDecider(Settings settings, NodeSettingsService nodeSettingsService) {
         super(settings);
-        enableRelocation = settings.getAsBoolean(CLUSTER_ROUTING_ALLOCATION_SNAPSHOT_RELOCATION_ENABLED, enableRelocation);
-        nodeSettingsService.addListener(new ApplySettings());
     }
 
     /**
@@ -96,10 +63,10 @@ public class SnapshotInProgressAllocationDecider extends AllocationDecider {
     }
 
     private Decision canMove(ShardRouting shardRouting, RoutingAllocation allocation) {
-        if (!enableRelocation && shardRouting.primary()) {
+        if (shardRouting.primary()) {
             // Only primary shards are snapshotted
 
-            SnapshotsInProgress snapshotsInProgress = allocation.routingNodes().custom(SnapshotsInProgress.TYPE);
+            SnapshotsInProgress snapshotsInProgress = allocation.custom(SnapshotsInProgress.TYPE);
             if (snapshotsInProgress == null) {
                 // Snapshots are not running
                 return allocation.decision(Decision.YES, NAME, "no snapshots are currently running");
@@ -107,14 +74,19 @@ public class SnapshotInProgressAllocationDecider extends AllocationDecider {
 
             for (SnapshotsInProgress.Entry snapshot : snapshotsInProgress.entries()) {
                 SnapshotsInProgress.ShardSnapshotStatus shardSnapshotStatus = snapshot.shards().get(shardRouting.shardId());
-                if (shardSnapshotStatus != null && !shardSnapshotStatus.state().completed() && shardSnapshotStatus.nodeId() != null && shardSnapshotStatus.nodeId().equals(shardRouting.currentNodeId())) {
-                    logger.trace("Preventing snapshotted shard [{}] to be moved from node [{}]", shardRouting.shardId(), shardSnapshotStatus.nodeId());
-                    return allocation.decision(Decision.NO, NAME, "snapshot for shard [%s] is currently running on node [%s]",
-                            shardRouting.shardId(), shardSnapshotStatus.nodeId());
+                if (shardSnapshotStatus != null && !shardSnapshotStatus.state().completed() && shardSnapshotStatus.nodeId() != null &&
+                        shardSnapshotStatus.nodeId().equals(shardRouting.currentNodeId())) {
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Preventing snapshotted shard [{}] from being moved away from node [{}]",
+                                shardRouting.shardId(), shardSnapshotStatus.nodeId());
+                    }
+                    return allocation.decision(Decision.THROTTLE, NAME,
+                        "waiting for snapshotting of shard [%s] to complete on this node [%s]",
+                        shardRouting.shardId(), shardSnapshotStatus.nodeId());
                 }
             }
         }
-        return allocation.decision(Decision.YES, NAME, "shard not primary or relocation disabled");
+        return allocation.decision(Decision.YES, NAME, "the shard is not being snapshotted");
     }
 
 }

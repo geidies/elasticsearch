@@ -19,16 +19,25 @@
 package org.elasticsearch.index.query;
 
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.CachingTokenFilter;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.tokenattributes.TermToBytesRefAttribute;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.search.*;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.BoostQuery;
+import org.apache.lucene.search.FuzzyQuery;
+import org.apache.lucene.search.PrefixQuery;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.SynonymQuery;
 import org.apache.lucene.util.BytesRef;
+import org.elasticsearch.index.mapper.MappedFieldType;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Wrapper class for Lucene's SimpleQueryParser that allows us to redefine
@@ -37,11 +46,14 @@ import java.util.Map;
 public class SimpleQueryParser extends org.apache.lucene.queryparser.simple.SimpleQueryParser {
 
     private final Settings settings;
+    private QueryShardContext context;
 
     /** Creates a new parser with custom flags used to enable/disable certain features. */
-    public SimpleQueryParser(Analyzer analyzer, Map<String, Float> weights, int flags, Settings settings) {
+    public SimpleQueryParser(Analyzer analyzer, Map<String, Float> weights, int flags,
+                             Settings settings, QueryShardContext context) {
         super(analyzer, weights, flags);
         this.settings = settings;
+        this.context = context;
     }
 
     /**
@@ -55,20 +67,29 @@ public class SimpleQueryParser extends org.apache.lucene.queryparser.simple.Simp
     }
 
     @Override
+    protected Query newTermQuery(Term term) {
+        MappedFieldType currentFieldType = context.fieldMapper(term.field());
+        if (currentFieldType == null || currentFieldType.tokenized()) {
+            return super.newTermQuery(term);
+        }
+        return currentFieldType.termQuery(term.bytes(), context);
+    }
+
+    @Override
     public Query newDefaultQuery(String text) {
-        BooleanQuery bq = new BooleanQuery(true);
+        BooleanQuery.Builder bq = new BooleanQuery.Builder();
+        bq.setDisableCoord(true);
         for (Map.Entry<String,Float> entry : weights.entrySet()) {
             try {
                 Query q = createBooleanQuery(entry.getKey(), text, super.getDefaultOperator());
                 if (q != null) {
-                    q.setBoost(entry.getValue());
-                    bq.add(q, BooleanClause.Occur.SHOULD);
+                    bq.add(wrapWithBoost(q, entry.getValue()), BooleanClause.Occur.SHOULD);
                 }
             } catch (RuntimeException e) {
                 rethrowUnlessLenient(e);
             }
         }
-        return super.simplify(bq);
+        return super.simplify(bq.build());
     }
 
     /**
@@ -77,39 +98,45 @@ public class SimpleQueryParser extends org.apache.lucene.queryparser.simple.Simp
      */
     @Override
     public Query newFuzzyQuery(String text, int fuzziness) {
-        if (settings.lowercaseExpandedTerms()) {
-            text = text.toLowerCase(settings.locale());
-        }
-        BooleanQuery bq = new BooleanQuery(true);
+        BooleanQuery.Builder bq = new BooleanQuery.Builder();
+        bq.setDisableCoord(true);
         for (Map.Entry<String,Float> entry : weights.entrySet()) {
+            final String fieldName = entry.getKey();
             try {
-                Query q = new FuzzyQuery(new Term(entry.getKey(), text), fuzziness);
-                if (q != null) {
-                    q.setBoost(entry.getValue());
-                    bq.add(q, BooleanClause.Occur.SHOULD);
-                }
+                final BytesRef term = getAnalyzer().normalize(fieldName, text);
+                Query query = new FuzzyQuery(new Term(fieldName, term), fuzziness);
+                bq.add(wrapWithBoost(query, entry.getValue()), BooleanClause.Occur.SHOULD);
             } catch (RuntimeException e) {
                 rethrowUnlessLenient(e);
             }
         }
-        return super.simplify(bq);
+        return super.simplify(bq.build());
     }
 
     @Override
     public Query newPhraseQuery(String text, int slop) {
-        BooleanQuery bq = new BooleanQuery(true);
+        BooleanQuery.Builder bq = new BooleanQuery.Builder();
+        bq.setDisableCoord(true);
         for (Map.Entry<String,Float> entry : weights.entrySet()) {
             try {
-                Query q = createPhraseQuery(entry.getKey(), text, slop);
+                String field = entry.getKey();
+                if (settings.quoteFieldSuffix() != null) {
+                    String quoteField = field + settings.quoteFieldSuffix();
+                    MappedFieldType quotedFieldType = context.fieldMapper(quoteField);
+                    if (quotedFieldType != null) {
+                        field = quoteField;
+                    }
+                }
+                Float boost = entry.getValue();
+                Query q = createPhraseQuery(field, text, slop);
                 if (q != null) {
-                    q.setBoost(entry.getValue());
-                    bq.add(q, BooleanClause.Occur.SHOULD);
+                    bq.add(wrapWithBoost(q, boost), BooleanClause.Occur.SHOULD);
                 }
             } catch (RuntimeException e) {
                 rethrowUnlessLenient(e);
             }
         }
-        return super.simplify(bq);
+        return super.simplify(bq.build());
     }
 
     /**
@@ -118,135 +145,188 @@ public class SimpleQueryParser extends org.apache.lucene.queryparser.simple.Simp
      */
     @Override
     public Query newPrefixQuery(String text) {
-        if (settings.lowercaseExpandedTerms()) {
-            text = text.toLowerCase(settings.locale());
-        }
-        BooleanQuery bq = new BooleanQuery(true);
+        BooleanQuery.Builder bq = new BooleanQuery.Builder();
+        bq.setDisableCoord(true);
         for (Map.Entry<String,Float> entry : weights.entrySet()) {
+            final String fieldName = entry.getKey();
             try {
                 if (settings.analyzeWildcard()) {
-                    Query analyzedQuery = newPossiblyAnalyzedQuery(entry.getKey(), text);
-                    analyzedQuery.setBoost(entry.getValue());
-                    bq.add(analyzedQuery, BooleanClause.Occur.SHOULD);
+                    Query analyzedQuery = newPossiblyAnalyzedQuery(fieldName, text);
+                    if (analyzedQuery != null) {
+                        bq.add(wrapWithBoost(analyzedQuery, entry.getValue()), BooleanClause.Occur.SHOULD);
+                    }
                 } else {
-                    PrefixQuery prefix = new PrefixQuery(new Term(entry.getKey(), text));
-                    prefix.setBoost(entry.getValue());
-                    bq.add(prefix, BooleanClause.Occur.SHOULD);
+                    Term term = new Term(fieldName, getAnalyzer().normalize(fieldName, text));
+                    Query query = new PrefixQuery(term);
+                    bq.add(wrapWithBoost(query, entry.getValue()), BooleanClause.Occur.SHOULD);
                 }
             } catch (RuntimeException e) {
                 return rethrowUnlessLenient(e);
             }
         }
-        return super.simplify(bq);
+        return super.simplify(bq.build());
+    }
+
+    private static Query wrapWithBoost(Query query, float boost) {
+        if (boost != AbstractQueryBuilder.DEFAULT_BOOST) {
+            return new BoostQuery(query, boost);
+        }
+        return query;
     }
 
     /**
      * Analyze the given string using its analyzer, constructing either a
      * {@code PrefixQuery} or a {@code BooleanQuery} made up
-     * of {@code PrefixQuery}s
+     * of {@code TermQuery}s and {@code PrefixQuery}s
      */
     private Query newPossiblyAnalyzedQuery(String field, String termStr) {
+        List<List<BytesRef>> tlist = new ArrayList<> ();
+        // get Analyzer from superclass and tokenize the term
         try (TokenStream source = getAnalyzer().tokenStream(field, termStr)) {
-            // Use the analyzer to get all the tokens, and then build a TermQuery,
-            // PhraseQuery, or nothing based on the term count
-            CachingTokenFilter buffer = new CachingTokenFilter(source);
-            buffer.reset();
+            source.reset();
+            List<BytesRef> currentPos = new ArrayList<>();
+            CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
+            PositionIncrementAttribute posAtt = source.addAttribute(PositionIncrementAttribute.class);
 
-            TermToBytesRefAttribute termAtt = null;
-            int numTokens = 0;
-            boolean hasMoreTokens = false;
-            termAtt = buffer.getAttribute(TermToBytesRefAttribute.class);
-            if (termAtt != null) {
-                try {
-                    hasMoreTokens = buffer.incrementToken();
-                    while (hasMoreTokens) {
-                        numTokens++;
-                        hasMoreTokens = buffer.incrementToken();
+            try {
+                boolean hasMoreTokens = source.incrementToken();
+                while (hasMoreTokens) {
+                    if (currentPos.isEmpty() == false && posAtt.getPositionIncrement() > 0) {
+                        tlist.add(currentPos);
+                        currentPos = new ArrayList<>();
                     }
-                } catch (IOException e) {
-                    // ignore
+                    final BytesRef term = getAnalyzer().normalize(field, termAtt.toString());
+                    currentPos.add(term);
+                    hasMoreTokens = source.incrementToken();
                 }
-            }
-
-            // rewind buffer
-            buffer.reset();
-
-            BytesRef bytes = termAtt == null ? null : termAtt.getBytesRef();
-            if (numTokens == 0) {
-                return null;
-            } else if (numTokens == 1) {
-                try {
-                    boolean hasNext = buffer.incrementToken();
-                    assert hasNext == true;
-                    termAtt.fillBytesRef();
-                } catch (IOException e) {
-                    // safe to ignore, because we know the number of tokens
+                if (currentPos.isEmpty() == false) {
+                    tlist.add(currentPos);
                 }
-                return new PrefixQuery(new Term(field, BytesRef.deepCopyOf(bytes)));
-            } else {
-                BooleanQuery bq = new BooleanQuery();
-                for (int i = 0; i < numTokens; i++) {
-                    try {
-                        boolean hasNext = buffer.incrementToken();
-                        assert hasNext == true;
-                        termAtt.fillBytesRef();
-                    } catch (IOException e) {
-                        // safe to ignore, because we know the number of tokens
-                    }
-                    bq.add(new BooleanClause(new PrefixQuery(new Term(field, BytesRef.deepCopyOf(bytes))), BooleanClause.Occur.SHOULD));
-                }
-                return bq;
+            } catch (IOException e) {
+                // ignore
+                // TODO: we should not ignore the exception and return a prefix query with the original term ?
             }
         } catch (IOException e) {
             // Bail on any exceptions, going with a regular prefix query
             return new PrefixQuery(new Term(field, termStr));
         }
+
+        if (tlist.size() == 0) {
+            return null;
+        }
+
+        if (tlist.size() == 1 && tlist.get(0).size() == 1) {
+            return new PrefixQuery(new Term(field, tlist.get(0).get(0)));
+        }
+
+        // build a boolean query with prefix on the last position only.
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        for (int pos = 0; pos < tlist.size(); pos++) {
+            List<BytesRef> plist = tlist.get(pos);
+            boolean isLastPos = (pos == tlist.size()-1);
+            Query posQuery;
+            if (plist.size() == 1) {
+                if (isLastPos) {
+                    posQuery = new PrefixQuery(new Term(field, plist.get(0)));
+                } else {
+                    posQuery = newTermQuery(new Term(field, plist.get(0)));
+                }
+            } else if (isLastPos == false) {
+                // build a synonym query for terms in the same position.
+                Term[] terms = new Term[plist.size()];
+                for (int i = 0; i < plist.size(); i++) {
+                    terms[i] = new Term(field, plist.get(i));
+                }
+                posQuery = new SynonymQuery(terms);
+            } else {
+                BooleanQuery.Builder innerBuilder = new BooleanQuery.Builder();
+                for (BytesRef token : plist) {
+                    innerBuilder.add(new BooleanClause(new PrefixQuery(new Term(field, token)),
+                        BooleanClause.Occur.SHOULD));
+                }
+                posQuery = innerBuilder.setDisableCoord(true).build();
+            }
+            builder.add(new BooleanClause(posQuery, getDefaultOperator()));
+        }
+        return builder.build();
     }
 
     /**
      * Class encapsulating the settings for the SimpleQueryString query, with
      * their default values
      */
-    public static class Settings {
-        private Locale locale = Locale.ROOT;
-        private boolean lowercaseExpandedTerms = true;
-        private boolean lenient = false;
-        private boolean analyzeWildcard = false;
+    static class Settings {
+        /** Specifies whether lenient query parsing should be used. */
+        private boolean lenient = SimpleQueryStringBuilder.DEFAULT_LENIENT;
+        /** Specifies whether wildcards should be analyzed. */
+        private boolean analyzeWildcard = SimpleQueryStringBuilder.DEFAULT_ANALYZE_WILDCARD;
+        /** Specifies a suffix, if any, to apply to field names for phrase matching. */
+        private String quoteFieldSuffix = null;
 
-        public Settings() {
-
+        /**
+         * Generates default {@link Settings} object (uses ROOT locale, does
+         * lowercase terms, no lenient parsing, no wildcard analysis).
+         * */
+        Settings() {
         }
 
-        public void locale(Locale locale) {
-            this.locale = locale;
+        Settings(Settings other) {
+            this.lenient = other.lenient;
+            this.analyzeWildcard = other.analyzeWildcard;
+            this.quoteFieldSuffix = other.quoteFieldSuffix;
         }
 
-        public Locale locale() {
-            return this.locale;
-        }
-
-        public void lowercaseExpandedTerms(boolean lowercaseExpandedTerms) {
-            this.lowercaseExpandedTerms = lowercaseExpandedTerms;
-        }
-
-        public boolean lowercaseExpandedTerms() {
-            return this.lowercaseExpandedTerms;
-        }
-
+        /** Specifies whether to use lenient parsing, defaults to false. */
         public void lenient(boolean lenient) {
             this.lenient = lenient;
         }
 
+        /** Returns whether to use lenient parsing. */
         public boolean lenient() {
             return this.lenient;
         }
 
+        /** Specifies whether to analyze wildcards. Defaults to false if unset. */
         public void analyzeWildcard(boolean analyzeWildcard) {
             this.analyzeWildcard = analyzeWildcard;
         }
 
+        /** Returns whether to analyze wildcards. */
         public boolean analyzeWildcard() {
             return analyzeWildcard;
+        }
+
+        /**
+         * Set the suffix to append to field names for phrase matching.
+         */
+        public void quoteFieldSuffix(String suffix) {
+            this.quoteFieldSuffix = suffix;
+        }
+
+        /**
+         * Return the suffix to append for phrase matching, or {@code null} if
+         * no suffix should be appended.
+         */
+        public String quoteFieldSuffix() {
+            return quoteFieldSuffix;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(lenient, analyzeWildcard, quoteFieldSuffix);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (obj == null || getClass() != obj.getClass()) {
+                return false;
+            }
+            Settings other = (Settings) obj;
+            return Objects.equals(lenient, other.lenient) && Objects.equals(analyzeWildcard, other.analyzeWildcard)
+                    && Objects.equals(quoteFieldSuffix, other.quoteFieldSuffix);
         }
     }
 }

@@ -1,8 +1,6 @@
 [[search-aggregations-pipeline-movavg-aggregation]]
 === Moving Average Aggregation
 
-coming[2.0.0]
-
 experimental[]
 
 Given an ordered series of data, the Moving Average aggregation will slide a window across the data and emit the average
@@ -29,7 +27,7 @@ A `moving_avg` aggregation looks like this in isolation:
         "buckets_path": "the_sum",
         "model": "holt",
         "window": 5,
-        "gap_policy": "insert_zero",
+        "gap_policy": "insert_zeros",
         "settings": {
             "alpha": 0.8
         }
@@ -40,9 +38,9 @@ A `moving_avg` aggregation looks like this in isolation:
 .`moving_avg` Parameters
 |===
 |Parameter Name |Description |Required |Default Value
-|`buckets_path` |Path to the metric of interest (see <<bucket-path-syntax, `buckets_path` Syntax>> for more details |Required |
+|`buckets_path` |Path to the metric of interest (see <<buckets-path-syntax, `buckets_path` Syntax>> for more details |Required |
 |`model` |The moving average weighting model that we wish to use |Optional |`simple`
-|`gap_policy` |Determines what should happen when a gap in the data is encountered. |Optional |`insert_zero`
+|`gap_policy` |Determines what should happen when a gap in the data is encountered. |Optional |`insert_zeros`
 |`window` |The size of window to "slide" across the histogram. |Optional |`5`
 |`minimize` |If the model should be algorithmically minimized.  See <<movavg-minimizer, Minimization>> for more
  details |Optional |`false` for most models
@@ -54,23 +52,29 @@ embedded like any other metric aggregation:
 
 [source,js]
 --------------------------------------------------
+POST /_search
 {
-    "my_date_histo":{                <1>
-        "date_histogram":{
-            "field":"timestamp",
-            "interval":"day"
-        },
-        "aggs":{
-            "the_sum":{
-                "sum":{ "field": "lemmings" } <2>
+    "size": 0,
+    "aggs": {
+        "my_date_histo":{                <1>
+            "date_histogram":{
+                "field":"timestamp",
+                "interval":"day"
             },
-            "the_movavg":{
-                "moving_avg":{ "buckets_path": "the_sum" } <3>
+            "aggs":{
+                "the_sum":{
+                    "sum":{ "field": "lemmings" } <2>
+                },
+                "the_movavg":{
+                    "moving_avg":{ "buckets_path": "the_sum" } <3>
+                }
             }
         }
     }
 }
 --------------------------------------------------
+// CONSOLE
+
 <1> A `date_histogram` named "my_date_histo" is constructed on the "timestamp" field, with one-day intervals
 <2> A `sum` metric is used to calculate the sum of a field.  This could be any metric (sum, min, max, etc)
 <3> Finally, we specify a `moving_avg` aggregation which uses "the_sum" metric as its input.
@@ -78,7 +82,7 @@ embedded like any other metric aggregation:
 Moving averages are built by first specifying a `histogram` or `date_histogram` over a field.  You can then optionally
 add normal metrics, such as a `sum`, inside of that histogram.  Finally, the `moving_avg` is embedded inside the histogram.
 The `buckets_path` parameter is then used to "point" at one of the sibling metrics inside of the histogram (see
-<<bucket-path-syntax>> for a description of the syntax for `buckets_path`.
+<<buckets-path-syntax>> for a description of the syntax for `buckets_path`.
 
 
 ==== Models
@@ -353,7 +357,7 @@ you can disable this behavior with `pad: false`
 All the moving average model support a "prediction" mode, which will attempt to extrapolate into the future given the
 current smoothed, moving average.  Depending on the model and parameter, these predictions may or may not be accurate.
 
-Predictions are enabled by adding a `predict` parameter to any moving average aggregation, specifying the nubmer of
+Predictions are enabled by adding a `predict` parameter to any moving average aggregation, specifying the number of
 predictions you would like appended to the end of the series.  These predictions will be spaced out at the same interval
 as your buckets:
 
@@ -365,7 +369,7 @@ as your buckets:
             "buckets_path": "the_sum",
             "window" : 30,
             "model" : "simple",
-            "predict" 10
+            "predict" : 10
         }
 }
 --------------------------------------------------

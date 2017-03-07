@@ -20,6 +20,7 @@
 package org.elasticsearch.index.engine;
 
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
@@ -29,12 +30,13 @@ import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.lucene.index.ElasticsearchDirectoryReader;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ReleasableLock;
-import org.elasticsearch.index.deletionpolicy.SnapshotIndexCommit;
+import org.elasticsearch.index.seqno.SequenceNumbersService;
 import org.elasticsearch.index.translog.Translog;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * ShadowEngine is a specialized engine that only allows read-only operations
@@ -57,8 +59,8 @@ import java.util.List;
 public class ShadowEngine extends Engine {
 
     /** how long to wait for an index to exist */
-    public final static String NONEXISTENT_INDEX_RETRY_WAIT = "index.shadow.wait_for_initial_commit";
-    public final static TimeValue DEFAULT_NONEXISTENT_INDEX_RETRY_WAIT = TimeValue.timeValueSeconds(5);
+    public static final String NONEXISTENT_INDEX_RETRY_WAIT = "index.shadow.wait_for_initial_commit";
+    public static final TimeValue DEFAULT_NONEXISTENT_INDEX_RETRY_WAIT = TimeValue.timeValueSeconds(5);
 
     private volatile SearcherManager searcherManager;
 
@@ -66,8 +68,11 @@ public class ShadowEngine extends Engine {
 
     public ShadowEngine(EngineConfig engineConfig)  {
         super(engineConfig);
+        if (engineConfig.getRefreshListeners() != null) {
+            throw new IllegalArgumentException("ShadowEngine doesn't support RefreshListeners");
+        }
         SearcherFactory searcherFactory = new EngineSearcherFactory(engineConfig);
-        final long nonexistentRetryTime = engineConfig.getIndexSettings()
+        final long nonexistentRetryTime = engineConfig.getIndexSettings().getSettings()
                 .getAsTime(NONEXISTENT_INDEX_RETRY_WAIT, DEFAULT_NONEXISTENT_INDEX_RETRY_WAIT)
                 .getMillis();
         try {
@@ -85,7 +90,7 @@ public class ShadowEngine extends Engine {
                             nonexistentRetryTime + "ms, " +
                             "directory is not an index");
                 }
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 logger.warn("failed to create new reader", e);
                 throw e;
             } finally {
@@ -102,25 +107,18 @@ public class ShadowEngine extends Engine {
 
 
     @Override
-    public void create(Create create) throws EngineException {
-        throw new UnsupportedOperationException(shardId + " create operation not allowed on shadow engine");
-    }
-
-    @Override
-    public boolean index(Index index) throws EngineException {
+    public IndexResult index(Index index) {
         throw new UnsupportedOperationException(shardId + " index operation not allowed on shadow engine");
     }
 
     @Override
-    public void delete(Delete delete) throws EngineException {
+    public DeleteResult delete(Delete delete) {
         throw new UnsupportedOperationException(shardId + " delete operation not allowed on shadow engine");
     }
 
-    /** @deprecated This was removed, but we keep this API so translog can replay any DBQs on upgrade. */
-    @Deprecated
     @Override
-    public void delete(DeleteByQuery delete) throws EngineException {
-        throw new UnsupportedOperationException(shardId + " delete-by-query operation not allowed on shadow engine");
+    public NoOpResult noOp(NoOp noOp) {
+        throw new UnsupportedOperationException(shardId + " no-op operation not allowed on shadow engine");
     }
 
     @Override
@@ -148,7 +146,7 @@ public class ShadowEngine extends Engine {
         try (ReleasableLock lock = readLock.acquire()) {
             // reread the last committed segment infos
             lastCommittedSegmentInfos = readLastCommittedSegmentInfos(searcherManager, store);
-        } catch (Throwable e) {
+        } catch (Exception e) {
             if (isClosed.get() == false) {
                 logger.warn("failed to read latest segment infos on flush", e);
                 if (Lucene.isCorruptionException(e)) {
@@ -168,9 +166,9 @@ public class ShadowEngine extends Engine {
     }
 
     @Override
-    public GetResult get(Get get) throws EngineException {
+    public GetResult get(Get get, Function<String, Searcher> searcherFacotry) throws EngineException {
         // There is no translog, so we can get it directly from the searcher
-        return getFromSearcher(get);
+        return getFromSearcher(get, searcherFacotry);
     }
 
     @Override
@@ -199,17 +197,19 @@ public class ShadowEngine extends Engine {
             ensureOpen();
             searcherManager.maybeRefreshBlocking();
         } catch (AlreadyClosedException e) {
-            ensureOpen();
-        } catch (EngineClosedException e) {
             throw e;
-        } catch (Throwable t) {
-            failEngine("refresh failed", t);
-            throw new RefreshFailedEngineException(shardId, t);
+        } catch (Exception e) {
+            try {
+                failEngine("refresh failed", e);
+            } catch (Exception inner) {
+                e.addSuppressed(inner);
+            }
+            throw new RefreshFailedEngineException(shardId, e);
         }
     }
 
     @Override
-    public SnapshotIndexCommit snapshotIndex(boolean flushFirst) throws EngineException {
+    public IndexCommit acquireIndexCommit(boolean flushFirst) throws EngineException {
         throw new UnsupportedOperationException("Can not take snapshot from a shadow engine");
     }
 
@@ -224,8 +224,8 @@ public class ShadowEngine extends Engine {
             try {
                 logger.debug("shadow replica close searcher manager refCount: {}", store.refCount());
                 IOUtils.close(searcherManager);
-            } catch (Throwable t) {
-                logger.warn("shadow replica failed to close searcher manager", t);
+            } catch (Exception e) {
+                logger.warn("shadow replica failed to close searcher manager", e);
             } finally {
                 store.decRef();
             }
@@ -233,13 +233,50 @@ public class ShadowEngine extends Engine {
     }
 
     @Override
-    public boolean hasUncommittedChanges() {
+    protected SegmentInfos getLastCommittedSegmentInfos() {
+        return lastCommittedSegmentInfos;
+    }
+
+    @Override
+    public long getIndexBufferRAMBytesUsed() {
+        // No IndexWriter nor version map
+        throw new UnsupportedOperationException("ShadowEngine has no IndexWriter");
+    }
+
+    @Override
+    public void writeIndexingBuffer() {
+        // No indexing buffer
+        throw new UnsupportedOperationException("ShadowEngine has no IndexWriter");
+    }
+
+    @Override
+    public void activateThrottling() {
+        throw new UnsupportedOperationException("ShadowEngine has no IndexWriter");
+    }
+
+    @Override
+    public void deactivateThrottling() {
+        throw new UnsupportedOperationException("ShadowEngine has no IndexWriter");
+    }
+
+    @Override
+    public SequenceNumbersService seqNoService() {
+        throw new UnsupportedOperationException("ShadowEngine doesn't track sequence numbers");
+    }
+
+    @Override
+    public boolean isThrottled() {
         return false;
     }
 
     @Override
-    protected SegmentInfos getLastCommittedSegmentInfos() {
-        return lastCommittedSegmentInfos;
+    public long getIndexThrottleTimeInMillis() {
+        return 0L;
+    }
+
+    @Override
+    public Engine recoverFromTranslog() throws IOException {
+        throw new UnsupportedOperationException("can't recover on a shadow engine");
     }
 
 }

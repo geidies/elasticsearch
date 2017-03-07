@@ -24,9 +24,6 @@ import org.elasticsearch.action.support.master.MasterNodeOperationRequestBuilder
 import org.elasticsearch.client.ElasticsearchClient;
 import org.elasticsearch.common.unit.TimeValue;
 
-/**
- *
- */
 public class DeleteIndexRequestBuilder extends MasterNodeOperationRequestBuilder<DeleteIndexRequest, DeleteIndexResponse, DeleteIndexRequestBuilder> {
 
     public DeleteIndexRequestBuilder(ElasticsearchClient client, DeleteIndexAction action, String... indices) {
@@ -53,7 +50,7 @@ public class DeleteIndexRequestBuilder extends MasterNodeOperationRequestBuilder
 
     /**
      * Specifies what type of requested indices to ignore and wildcard indices expressions.
-     * <p/>
+     * <p>
      * For example indices that don't exist.
      */
     public DeleteIndexRequestBuilder setIndicesOptions(IndicesOptions options) {

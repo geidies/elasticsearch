@@ -18,6 +18,7 @@
  */
 package org.elasticsearch.search.aggregations.support;
 
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
@@ -66,26 +67,7 @@ public abstract class ValuesSource {
         return false;
     }
 
-    public static abstract class Bytes extends ValuesSource {
-
-        public static final WithOrdinals EMPTY = new WithOrdinals() {
-
-            @Override
-            public RandomAccessOrds ordinalsValues(LeafReaderContext context) {
-                return DocValues.emptySortedSet();
-            }
-
-            @Override
-            public RandomAccessOrds globalOrdinalsValues(LeafReaderContext context) {
-                return DocValues.emptySortedSet();
-            }
-
-            @Override
-            public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
-                return org.elasticsearch.index.fielddata.FieldData.emptySortedBinary(context.reader().maxDoc());
-            }
-
-        };
+    public abstract static class Bytes extends ValuesSource {
 
         @Override
         public Bits docsWithValue(LeafReaderContext context) throws IOException {
@@ -97,7 +79,26 @@ public abstract class ValuesSource {
             }
         }
 
-        public static abstract class WithOrdinals extends Bytes {
+        public abstract static class WithOrdinals extends Bytes {
+
+            public static final WithOrdinals EMPTY = new WithOrdinals() {
+
+                @Override
+                public RandomAccessOrds ordinalsValues(LeafReaderContext context) {
+                    return DocValues.emptySortedSet();
+                }
+
+                @Override
+                public RandomAccessOrds globalOrdinalsValues(LeafReaderContext context) {
+                    return DocValues.emptySortedSet();
+                }
+
+                @Override
+                public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
+                    return org.elasticsearch.index.fielddata.FieldData.emptySortedBinary(context.reader().maxDoc());
+                }
+
+            };
 
             @Override
             public Bits docsWithValue(LeafReaderContext context) {
@@ -146,7 +147,7 @@ public abstract class ValuesSource {
 
                 @Override
                 public RandomAccessOrds globalOrdinalsValues(LeafReaderContext context) {
-                    final IndexOrdinalsFieldData global = indexFieldData.loadGlobal(context.parent.reader());
+                    final IndexOrdinalsFieldData global = indexFieldData.loadGlobal((DirectoryReader)context.parent.reader());
                     final AtomicOrdinalsFieldData atomicFieldData = global.load(context);
                     return atomicFieldData.getOrdinalsValues();
                 }
@@ -162,7 +163,7 @@ public abstract class ValuesSource {
             }
 
             public long globalMaxOrd(IndexSearcher indexSearcher, String type) {
-                IndexReader indexReader = indexSearcher.getIndexReader();
+                DirectoryReader indexReader = (DirectoryReader) indexSearcher.getIndexReader();
                 if (indexReader.leaves().isEmpty()) {
                     return 0;
                 } else {
@@ -175,7 +176,7 @@ public abstract class ValuesSource {
             }
 
             public SortedDocValues globalOrdinalsValues(String type, LeafReaderContext context) {
-                final IndexParentChildFieldData global = indexFieldData.loadGlobal(context.parent.reader());
+                final IndexParentChildFieldData global = indexFieldData.loadGlobal((DirectoryReader)context.parent.reader());
                 final AtomicParentChildFieldData atomicFieldData = global.load(context);
                 return atomicFieldData.getOrdinalsValues(type);
             }
@@ -216,15 +217,14 @@ public abstract class ValuesSource {
 
             @Override
             public boolean needsScores() {
-                // TODO: add a way to know whether scripts are using scores
-                return true;
+                return script.needsScores();
             }
         }
 
 
     }
 
-    public static abstract class Numeric extends ValuesSource {
+    public abstract static class Numeric extends ValuesSource {
 
         public static final Numeric EMPTY = new Numeric() {
 
@@ -295,8 +295,7 @@ public abstract class ValuesSource {
 
             @Override
             public boolean needsScores() {
-                // TODO: add a way to know whether scripts are using scores
-                return true;
+                return script.needsScores();
             }
 
             @Override
@@ -319,7 +318,7 @@ public abstract class ValuesSource {
                 private final SortedNumericDocValues longValues;
                 private final LeafSearchScript script;
 
-                public LongValues(SortedNumericDocValues values, LeafSearchScript script) {
+                LongValues(SortedNumericDocValues values, LeafSearchScript script) {
                     this.longValues = values;
                     this.script = script;
                 }
@@ -330,7 +329,7 @@ public abstract class ValuesSource {
                     resize(longValues.count());
                     script.setDocument(doc);
                     for (int i = 0; i < count(); ++i) {
-                        script.setNextVar("_value", longValues.valueAt(i));
+                        script.setNextAggregationValue(longValues.valueAt(i));
                         values[i] = script.runAsLong();
                     }
                     sort();
@@ -347,7 +346,7 @@ public abstract class ValuesSource {
                 private final SortedNumericDoubleValues doubleValues;
                 private final LeafSearchScript script;
 
-                public DoubleValues(SortedNumericDoubleValues values, LeafSearchScript script) {
+                DoubleValues(SortedNumericDoubleValues values, LeafSearchScript script) {
                     this.doubleValues = values;
                     this.script = script;
                 }
@@ -358,7 +357,7 @@ public abstract class ValuesSource {
                     resize(doubleValues.count());
                     script.setDocument(doc);
                     for (int i = 0; i < count(); ++i) {
-                        script.setNextVar("_value", doubleValues.valueAt(i));
+                        script.setNextAggregationValue(doubleValues.valueAt(i));
                         values[i] = script.runAsDouble();
                     }
                     sort();
@@ -431,8 +430,7 @@ public abstract class ValuesSource {
 
             @Override
             public boolean needsScores() {
-                // TODO: add a way to know whether scripts are using scores
-                return true;
+                return script.needsScores();
             }
         }
 
@@ -451,8 +449,7 @@ public abstract class ValuesSource {
 
         @Override
         public boolean needsScores() {
-            // TODO: add a way to know whether scripts are using scores
-            return true;
+            return script.needsScores();
         }
 
         @Override
@@ -465,7 +462,7 @@ public abstract class ValuesSource {
             private final SortedBinaryDocValues bytesValues;
             private final LeafSearchScript script;
 
-            public BytesValues(SortedBinaryDocValues bytesValues, LeafSearchScript script) {
+            BytesValues(SortedBinaryDocValues bytesValues, LeafSearchScript script) {
                 this.bytesValues = bytesValues;
                 this.script = script;
             }
@@ -477,7 +474,7 @@ public abstract class ValuesSource {
                 grow();
                 for (int i = 0; i < count; ++i) {
                     final BytesRef value = bytesValues.valueAt(i);
-                    script.setNextVar("_value", value.utf8ToString());
+                    script.setNextAggregationValue(value.utf8ToString());
                     values[i].copyChars(script.run().toString());
                 }
                 sort();
@@ -490,7 +487,7 @@ public abstract class ValuesSource {
         }
     }
 
-    public static abstract class GeoPoint extends ValuesSource {
+    public abstract static class GeoPoint extends ValuesSource {
 
         public static final GeoPoint EMPTY = new GeoPoint() {
 

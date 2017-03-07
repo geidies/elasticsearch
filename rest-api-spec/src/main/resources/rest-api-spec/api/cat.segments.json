@@ -12,6 +12,10 @@
         }
       },
       "params": {
+        "format": {
+          "type" : "string",
+          "description" : "a short version of the Accept header, e.g. json, yaml"
+        },
         "h": {
             "type": "list",
             "description" : "Comma-separated list of column names to display"
@@ -21,10 +25,14 @@
           "description": "Return help information",
           "default": false
         },
+        "s": {
+          "type": "list",
+          "description" : "Comma-separated list of column names or column aliases to sort by"
+        },
         "v": {
           "type": "boolean",
           "description": "Verbose mode. Display column headers",
-          "default": true
+          "default": false
         }
       }
     },

@@ -19,16 +19,13 @@
 
 package org.elasticsearch.index.analysis.compound;
 
+import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.compound.CompoundWordTokenFilterBase;
-import org.apache.lucene.analysis.util.CharArraySet;
-import org.elasticsearch.common.inject.Inject;
-import org.elasticsearch.common.inject.assistedinject.Assisted;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.env.Environment;
-import org.elasticsearch.index.Index;
+import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.index.analysis.AbstractTokenFilterFactory;
 import org.elasticsearch.index.analysis.Analysis;
-import org.elasticsearch.index.settings.IndexSettings;
 
 /**
  * Contains the common configuration settings between subclasses of this class.
@@ -41,15 +38,15 @@ public abstract class AbstractCompoundWordTokenFilterFactory extends AbstractTok
     protected final boolean onlyLongestMatch;
     protected final CharArraySet wordList;
 
-    @Inject
-    public AbstractCompoundWordTokenFilterFactory(Index index, @IndexSettings Settings indexSettings, Environment env, @Assisted String name, @Assisted Settings settings) {
-        super(index, indexSettings, name, settings);
+    public AbstractCompoundWordTokenFilterFactory(IndexSettings indexSettings, Environment env, String name, Settings settings) {
+        super(indexSettings, name, settings);
 
         minWordSize = settings.getAsInt("min_word_size", CompoundWordTokenFilterBase.DEFAULT_MIN_WORD_SIZE);
         minSubwordSize = settings.getAsInt("min_subword_size", CompoundWordTokenFilterBase.DEFAULT_MIN_SUBWORD_SIZE);
         maxSubwordSize = settings.getAsInt("max_subword_size", CompoundWordTokenFilterBase.DEFAULT_MAX_SUBWORD_SIZE);
-        onlyLongestMatch = settings.getAsBoolean("only_longest_match", false);
-        wordList = Analysis.getWordSet(env, settings, "word_list");
+        onlyLongestMatch = settings
+            .getAsBooleanLenientForPreEs6Indices(indexSettings.getIndexVersionCreated(), "only_longest_match", false, deprecationLogger);
+        wordList = Analysis.getWordSet(env, indexSettings.getIndexVersionCreated(), settings, "word_list");
         if (wordList == null) {
             throw new IllegalArgumentException("word_list must be provided for [" + name + "], either as a path to a file, or directly");
         }

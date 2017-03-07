@@ -20,18 +20,18 @@ package org.elasticsearch.search.aggregations.bucket.sampler;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.elasticsearch.common.ParseField;
-import org.elasticsearch.common.ParseFieldMatcher;
 import org.elasticsearch.common.lease.Releasables;
-import org.elasticsearch.search.aggregations.*;
+import org.elasticsearch.search.aggregations.AggregationExecutionException;
+import org.elasticsearch.search.aggregations.Aggregator;
+import org.elasticsearch.search.aggregations.AggregatorFactories;
+import org.elasticsearch.search.aggregations.InternalAggregation;
+import org.elasticsearch.search.aggregations.LeafBucketCollector;
 import org.elasticsearch.search.aggregations.bucket.BestDocsDeferringCollector;
 import org.elasticsearch.search.aggregations.bucket.DeferringBucketCollector;
 import org.elasticsearch.search.aggregations.bucket.SingleBucketAggregator;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
-import org.elasticsearch.search.aggregations.support.AggregationContext;
 import org.elasticsearch.search.aggregations.support.ValuesSource;
-import org.elasticsearch.search.aggregations.support.ValuesSource.Numeric;
-import org.elasticsearch.search.aggregations.support.ValuesSourceAggregatorFactory;
-import org.elasticsearch.search.aggregations.support.ValuesSourceConfig;
+import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
 import java.util.List;
@@ -39,7 +39,7 @@ import java.util.Map;
 
 /**
  * Aggregate on only the top-scoring docs on a shard.
- * 
+ *
  * TODO currently the diversity feature of this agg offers only 'script' and
  * 'field' as a means of generating a de-dup value. In future it would be nice
  * if users could use any of the "bucket" aggs syntax (geo, date histogram...)
@@ -49,6 +49,10 @@ import java.util.Map;
  */
 public class SamplerAggregator extends SingleBucketAggregator {
 
+    public static final ParseField SHARD_SIZE_FIELD = new ParseField("shard_size");
+    public static final ParseField MAX_DOCS_PER_VALUE_FIELD = new ParseField("max_docs_per_value");
+    public static final ParseField EXECUTION_HINT_FIELD = new ParseField("execution_hint");
+
 
     public enum ExecutionMode {
 
@@ -56,7 +60,7 @@ public class SamplerAggregator extends SingleBucketAggregator {
 
             @Override
             Aggregator create(String name, AggregatorFactories factories, int shardSize, int maxDocsPerValue, ValuesSource valuesSource,
-                    AggregationContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
+                    SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
                     Map<String, Object> metaData) throws IOException {
 
                 return new DiversifiedMapSamplerAggregator(name, shardSize, factories, context, parent, pipelineAggregators, metaData,
@@ -74,7 +78,7 @@ public class SamplerAggregator extends SingleBucketAggregator {
 
             @Override
             Aggregator create(String name, AggregatorFactories factories, int shardSize, int maxDocsPerValue, ValuesSource valuesSource,
-                    AggregationContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
+                    SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
                     Map<String, Object> metaData) throws IOException {
 
                 return new DiversifiedBytesHashSamplerAggregator(name, shardSize, factories, context, parent, pipelineAggregators,
@@ -93,7 +97,7 @@ public class SamplerAggregator extends SingleBucketAggregator {
 
             @Override
             Aggregator create(String name, AggregatorFactories factories, int shardSize, int maxDocsPerValue, ValuesSource valuesSource,
-                    AggregationContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
+                    SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
                     Map<String, Object> metaData) throws IOException {
                 return new DiversifiedOrdinalsSamplerAggregator(name, shardSize, factories, context, parent, pipelineAggregators, metaData,
                         (ValuesSource.Bytes.WithOrdinals.FieldData) valuesSource, maxDocsPerValue);
@@ -106,9 +110,9 @@ public class SamplerAggregator extends SingleBucketAggregator {
 
         };
 
-        public static ExecutionMode fromString(String value, ParseFieldMatcher parseFieldMatcher) {
+        public static ExecutionMode fromString(String value) {
             for (ExecutionMode mode : values()) {
-                if (parseFieldMatcher.match(value, mode.parseField)) {
+                if (mode.parseField.match(value)) {
                     return mode;
                 }
             }
@@ -121,8 +125,8 @@ public class SamplerAggregator extends SingleBucketAggregator {
             this.parseField = parseField;
         }
 
-        abstract Aggregator create(String name, AggregatorFactories factories, int shardSize, int maxDocsPerValue, ValuesSource valuesSource,
- AggregationContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
+        abstract Aggregator create(String name, AggregatorFactories factories, int shardSize, int maxDocsPerValue,
+                ValuesSource valuesSource, SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators,
                 Map<String, Object> metaData) throws IOException;
 
         abstract boolean needsGlobalOrdinals();
@@ -131,15 +135,15 @@ public class SamplerAggregator extends SingleBucketAggregator {
         public String toString() {
             return parseField.getPreferredName();
         }
-    }    
-    
+    }
+
 
     protected final int shardSize;
     protected BestDocsDeferringCollector bdd;
 
-    public SamplerAggregator(String name, int shardSize, AggregatorFactories factories, AggregationContext aggregationContext,
+    public SamplerAggregator(String name, int shardSize, AggregatorFactories factories, SearchContext context,
             Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
-        super(name, factories, aggregationContext, parent, pipelineAggregators, metaData);
+        super(name, factories, context, parent, pipelineAggregators, metaData);
         this.shardSize = shardSize;
     }
 
@@ -172,84 +176,6 @@ public class SamplerAggregator extends SingleBucketAggregator {
     @Override
     public InternalAggregation buildEmptyAggregation() {
         return new InternalSampler(name, 0, buildEmptySubAggregations(), pipelineAggregators(), metaData());
-    }
-
-    public static class Factory extends AggregatorFactory {
-
-        private int shardSize;
-
-        public Factory(String name, int shardSize) {
-            super(name, InternalSampler.TYPE.name());
-            this.shardSize = shardSize;
-        }
-
-        @Override
-        public Aggregator createInternal(AggregationContext context, Aggregator parent, boolean collectsFromSingleBucket,
-                List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
-            return new SamplerAggregator(name, shardSize, factories, context, parent, pipelineAggregators, metaData);
-        }
-
-    }
-
-    public static class DiversifiedFactory extends ValuesSourceAggregatorFactory<ValuesSource> {
-
-        private int shardSize;
-        private int maxDocsPerValue;
-        private String executionHint;
-
-        public DiversifiedFactory(String name, int shardSize, String executionHint, ValuesSourceConfig vsConfig, int maxDocsPerValue) {
-            super(name, InternalSampler.TYPE.name(), vsConfig);
-            this.shardSize = shardSize;
-            this.maxDocsPerValue = maxDocsPerValue;
-            this.executionHint = executionHint;
-        }
-
-        @Override
-        protected Aggregator doCreateInternal(ValuesSource valuesSource, AggregationContext context, Aggregator parent,
-                boolean collectsFromSingleBucket, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData)
-                throws IOException {
-
-            if (valuesSource instanceof ValuesSource.Numeric) {
-                return new DiversifiedNumericSamplerAggregator(name, shardSize, factories, context, parent, pipelineAggregators, metaData,
-                        (Numeric) valuesSource, maxDocsPerValue);
-            }
-            
-            if (valuesSource instanceof ValuesSource.Bytes) {
-                ExecutionMode execution = null;
-                if (executionHint != null) {
-                    execution = ExecutionMode.fromString(executionHint, context.searchContext().parseFieldMatcher());
-                }
-
-                // In some cases using ordinals is just not supported: override
-                // it
-                if(execution==null){
-                    execution = ExecutionMode.GLOBAL_ORDINALS;
-                }
-                if ((execution.needsGlobalOrdinals()) && (!(valuesSource instanceof ValuesSource.Bytes.WithOrdinals))) {
-                    execution = ExecutionMode.MAP;
-                }
-                return execution.create(name, factories, shardSize, maxDocsPerValue, valuesSource, context, parent, pipelineAggregators,
-                        metaData);
-            }
-            
-            throw new AggregationExecutionException("Sampler aggregation cannot be applied to field [" + config.fieldContext().field() +
-                    "]. It can only be applied to numeric or string fields.");
-        }
-
-        @Override
-        protected Aggregator createUnmapped(AggregationContext aggregationContext, Aggregator parent,
-                List<PipelineAggregator> pipelineAggregators,
-                Map<String, Object> metaData) throws IOException {
-            final UnmappedSampler aggregation = new UnmappedSampler(name, pipelineAggregators, metaData);
-
-            return new NonCollectingAggregator(name, aggregationContext, parent, factories, pipelineAggregators, metaData) {
-                @Override
-                public InternalAggregation buildEmptyAggregation() {
-                    return aggregation;
-                }
-            };
-        }
-
     }
 
     @Override

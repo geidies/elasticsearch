@@ -19,372 +19,98 @@
 
 package org.elasticsearch.index.query;
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
-
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.queryparser.classic.MapperQueryParser;
-import org.apache.lucene.queryparser.classic.QueryParserSettings;
-import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.join.BitDocIdSetFilter;
-import org.apache.lucene.search.similarities.Similarity;
-import org.elasticsearch.Version;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
-import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.ParseField;
-import org.elasticsearch.common.ParseFieldMatcher;
-import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.ParsingException;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry.UnknownNamedObjectException;
+import org.elasticsearch.common.xcontent.XContentLocation;
 import org.elasticsearch.common.xcontent.XContentParser;
-import org.elasticsearch.index.Index;
-import org.elasticsearch.index.analysis.AnalysisService;
-import org.elasticsearch.index.fielddata.IndexFieldData;
-import org.elasticsearch.index.mapper.*;
-import org.elasticsearch.index.mapper.core.StringFieldMapper;
-import org.elasticsearch.index.mapper.object.ObjectMapper;
-import org.elasticsearch.index.query.support.NestedScope;
-import org.elasticsearch.index.similarity.SimilarityService;
-import org.elasticsearch.script.ScriptService;
-import org.elasticsearch.search.fetch.innerhits.InnerHitsContext;
-import org.elasticsearch.search.internal.SearchContext;
-import org.elasticsearch.search.lookup.SearchLookup;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Objects;
 
 public class QueryParseContext {
 
     private static final ParseField CACHE = new ParseField("_cache").withAllDeprecated("Elasticsearch makes its own caching decisions");
     private static final ParseField CACHE_KEY = new ParseField("_cache_key").withAllDeprecated("Filters are always used as cache keys");
 
-    private static ThreadLocal<String[]> typesContext = new ThreadLocal<>();
+    private final XContentParser parser;
 
-    public static void setTypes(String[] types) {
-        typesContext.set(types);
-    }
-
-    public static String[] getTypes() {
-        return typesContext.get();
-    }
-
-    public static String[] setTypesWithPrevious(String[] types) {
-        String[] old = typesContext.get();
-        setTypes(types);
-        return old;
-    }
-
-    public static void removeTypes() {
-        typesContext.remove();
-    }
-
-    private final Index index;
-
-    private final Version indexVersionCreated;
-
-    private final IndexQueryParserService indexQueryParser;
-
-    private final Map<String, Query> namedQueries = Maps.newHashMap();
-
-    private final MapperQueryParser queryParser = new MapperQueryParser(this);
-
-    private XContentParser parser;
-
-    private ParseFieldMatcher parseFieldMatcher;
-
-    private boolean allowUnmappedFields;
-
-    private boolean mapUnmappedFieldAsString;
-
-    private NestedScope nestedScope;
-
-    private boolean isFilter;
-
-    public QueryParseContext(Index index, IndexQueryParserService indexQueryParser) {
-        this.index = index;
-        this.indexVersionCreated = Version.indexCreated(indexQueryParser.indexSettings());
-        this.indexQueryParser = indexQueryParser;
-    }
-
-    public void parseFieldMatcher(ParseFieldMatcher parseFieldMatcher) {
-        this.parseFieldMatcher = parseFieldMatcher;
-    }
-
-    public ParseFieldMatcher parseFieldMatcher() {
-        return parseFieldMatcher;
-    }
-
-    public void reset(XContentParser jp) {
-        allowUnmappedFields = indexQueryParser.defaultAllowUnmappedFields();
-        this.parseFieldMatcher = ParseFieldMatcher.EMPTY;
-        this.lookup = null;
-        this.parser = jp;
-        this.namedQueries.clear();
-        this.nestedScope = new NestedScope();
-        this.isFilter = false;
-    }
-
-    public Index index() {
-        return this.index;
-    }
-
-    public void parser(XContentParser parser) {
-        this.parser = parser;
+    public QueryParseContext(XContentParser parser) {
+        this.parser = Objects.requireNonNull(parser, "parser cannot be null");
     }
 
     public XContentParser parser() {
-        return parser;
-    }
-    
-    public IndexQueryParserService indexQueryParserService() {
-        return indexQueryParser;
+        return this.parser;
     }
 
-    public AnalysisService analysisService() {
-        return indexQueryParser.analysisService;
-    }
-
-    public ScriptService scriptService() {
-        return indexQueryParser.scriptService;
-    }
-
-    public MapperService mapperService() {
-        return indexQueryParser.mapperService;
-    }
-
-    @Nullable
-    public SimilarityService similarityService() {
-        return indexQueryParser.similarityService;
-    }
-
-    public Similarity searchSimilarity() {
-        return indexQueryParser.similarityService != null ? indexQueryParser.similarityService.similarity() : null;
-    }
-
-    public String defaultField() {
-        return indexQueryParser.defaultField();
-    }
-
-    public boolean queryStringLenient() {
-        return indexQueryParser.queryStringLenient();
-    }
-
-    public MapperQueryParser queryParser(QueryParserSettings settings) {
-        queryParser.reset(settings);
-        return queryParser;
-    }
-
-    public BitDocIdSetFilter bitsetFilter(Filter filter) {
-        return indexQueryParser.bitsetFilterCache.getBitDocIdSetFilter(filter);
-    }
-
-    public <IFD extends IndexFieldData<?>> IFD getForField(MappedFieldType mapper) {
-        return indexQueryParser.fieldDataService.getForField(mapper);
-    }
-
-    public void addNamedQuery(String name, Query query) {
-        namedQueries.put(name, query);
-    }
-
-    public ImmutableMap<String, Query> copyNamedQueries() {
-        return ImmutableMap.copyOf(namedQueries);
-    }
-
-    public void combineNamedQueries(QueryParseContext context) {
-        namedQueries.putAll(context.namedQueries);
+    public boolean isDeprecatedSetting(String setting) {
+        return CACHE.match(setting) || CACHE_KEY.match(setting);
     }
 
     /**
-     * Return whether we are currently parsing a filter or a query.
+     * Parses a top level query including the query element that wraps it
      */
-    public boolean isFilter() {
-        return isFilter;
+    public QueryBuilder parseTopLevelQueryBuilder() {
+        try {
+            QueryBuilder queryBuilder = null;
+            for (XContentParser.Token token = parser.nextToken(); token != XContentParser.Token.END_OBJECT; token = parser.nextToken()) {
+                if (token == XContentParser.Token.FIELD_NAME) {
+                    String fieldName = parser.currentName();
+                    if ("query".equals(fieldName)) {
+                        queryBuilder = parseInnerQueryBuilder();
+                    } else {
+                        throw new ParsingException(parser.getTokenLocation(), "request does not support [" + parser.currentName() + "]");
+                    }
+                }
+            }
+            return queryBuilder;
+        } catch (ParsingException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ParsingException(parser == null ? null : parser.getTokenLocation(), "Failed to parse", e);
+        }
     }
 
-    public void addInnerHits(String name, InnerHitsContext.BaseInnerHits context) {
-        SearchContext sc = SearchContext.current();
-        if (sc == null) {
-            throw new QueryParsingException(this, "inner_hits unsupported");
-        }
-
-        InnerHitsContext innerHitsContext;
-        if (sc.innerHits() == null) {
-            innerHitsContext = new InnerHitsContext(new HashMap<String, InnerHitsContext.BaseInnerHits>());
-            sc.innerHits(innerHitsContext);
-        } else {
-            innerHitsContext = sc.innerHits();
-        }
-        innerHitsContext.addInnerHitDefinition(name, context);
-    }
-
-    @Nullable
-    public Query parseInnerQuery() throws QueryParsingException, IOException {
-        // move to START object
-        XContentParser.Token token;
+    /**
+     * Parses a query excluding the query element that wraps it
+     */
+    public QueryBuilder parseInnerQueryBuilder() throws IOException {
         if (parser.currentToken() != XContentParser.Token.START_OBJECT) {
-            token = parser.nextToken();
-            if (token != XContentParser.Token.START_OBJECT) {
-                throw new QueryParsingException(this, "[_na] query malformed, must start with start_object");
+            if (parser.nextToken() != XContentParser.Token.START_OBJECT) {
+                throw new ParsingException(parser.getTokenLocation(), "[_na] query malformed, must start with start_object");
             }
         }
-        token = parser.nextToken();
-        if (token == XContentParser.Token.END_OBJECT) {
-            // empty query
-            return null;
+        if (parser.nextToken() == XContentParser.Token.END_OBJECT) {
+            // we encountered '{}' for a query clause, it used to be supported, deprecated in 5.0 and removed in 6.0
+            throw new IllegalArgumentException("query malformed, empty clause found at [" + parser.getTokenLocation() +"]");
         }
-        if (token != XContentParser.Token.FIELD_NAME) {
-            throw new QueryParsingException(this, "[_na] query malformed, no field after start_object");
+        if (parser.currentToken() != XContentParser.Token.FIELD_NAME) {
+            throw new ParsingException(parser.getTokenLocation(), "[_na] query malformed, no field after start_object");
         }
         String queryName = parser.currentName();
         // move to the next START_OBJECT
-        token = parser.nextToken();
-        if (token != XContentParser.Token.START_OBJECT && token != XContentParser.Token.START_ARRAY) {
-            throw new QueryParsingException(this, "[_na] query malformed, no field after start_object");
+        if (parser.nextToken() != XContentParser.Token.START_OBJECT) {
+            throw new ParsingException(parser.getTokenLocation(), "[" + queryName + "] query malformed, no start_object after query name");
         }
-
-        QueryParser queryParser = indexQueryParser.queryParser(queryName);
-        if (queryParser == null) {
-            throw new QueryParsingException(this, "No query registered for [" + queryName + "]");
+        QueryBuilder result;
+        try {
+            result = parser.namedObject(QueryBuilder.class, queryName, this);
+        } catch (UnknownNamedObjectException e) {
+            // Preserve the error message from 5.0 until we have a compellingly better message so we don't break BWC.
+            // This intentionally doesn't include the causing exception because that'd change the "root_cause" of any unknown query errors
+            throw new ParsingException(new XContentLocation(e.getLineNumber(), e.getColumnNumber()),
+                    "no [query] registered for [" + e.getName() + "]");
         }
-        Query result = queryParser.parse(this);
-        if (parser.currentToken() == XContentParser.Token.END_OBJECT || parser.currentToken() == XContentParser.Token.END_ARRAY) {
-            // if we are at END_OBJECT, move to the next one...
-            parser.nextToken();
+        //end_object of the specific query (e.g. match, multi_match etc.) element
+        if (parser.currentToken() != XContentParser.Token.END_OBJECT) {
+            throw new ParsingException(parser.getTokenLocation(),
+                    "[" + queryName + "] malformed query, expected [END_OBJECT] but found [" + parser.currentToken() + "]");
+        }
+        //end_object of the query object
+        if (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+            throw new ParsingException(parser.getTokenLocation(),
+                    "[" + queryName + "] malformed query, expected [END_OBJECT] but found [" + parser.currentToken() + "]");
         }
         return result;
     }
-
-    @Nullable
-    public Query parseInnerFilter() throws QueryParsingException, IOException {
-        final boolean originalIsFilter = isFilter;
-        try {
-            isFilter = true;
-            return parseInnerQuery();
-        } finally {
-            isFilter = originalIsFilter;
-        }
-    }
-
-    public Query parseInnerFilter(String queryName) throws IOException, QueryParsingException {
-        final boolean originalIsFilter = isFilter;
-        try {
-            isFilter = true;
-            QueryParser queryParser = indexQueryParser.queryParser(queryName);
-            if (queryParser == null) {
-                throw new QueryParsingException(this, "No query registered for [" + queryName + "]");
-            }
-            return queryParser.parse(this);
-        } finally {
-            isFilter = originalIsFilter;
-        }
-    }
-
-    public Collection<String> simpleMatchToIndexNames(String pattern) {
-        return indexQueryParser.mapperService.simpleMatchToIndexNames(pattern, getTypes());
-    }
-
-    public MappedFieldType fieldMapper(String name) {
-        return failIfFieldMappingNotFound(name, indexQueryParser.mapperService.smartNameFieldType(name, getTypes()));
-    }
-
-    public ObjectMapper getObjectMapper(String name) {
-        return indexQueryParser.mapperService.getObjectMapper(name, getTypes());
-    }
-
-    /** Gets the search analyzer for the given field, or the default if there is none present for the field
-     * TODO: remove this by moving defaults into mappers themselves
-     */
-    public Analyzer getSearchAnalyzer(MappedFieldType fieldType) {
-        if (fieldType.searchAnalyzer() != null) {
-            return fieldType.searchAnalyzer();
-        }
-        return mapperService().searchAnalyzer();
-    }
-
-    /** Gets the search quote nalyzer for the given field, or the default if there is none present for the field
-     * TODO: remove this by moving defaults into mappers themselves
-     */
-    public Analyzer getSearchQuoteAnalyzer(MappedFieldType fieldType) {
-        if (fieldType.searchQuoteAnalyzer() != null) {
-            return fieldType.searchQuoteAnalyzer();
-        }
-        return mapperService().searchQuoteAnalyzer();
-    }
-
-    public void setAllowUnmappedFields(boolean allowUnmappedFields) {
-        this.allowUnmappedFields = allowUnmappedFields;
-    }
-
-    public void setMapUnmappedFieldAsString(boolean mapUnmappedFieldAsString) {
-        this.mapUnmappedFieldAsString = mapUnmappedFieldAsString;
-    }
-
-    private MappedFieldType failIfFieldMappingNotFound(String name, MappedFieldType fieldMapping) {
-        if (allowUnmappedFields) {
-            return fieldMapping;
-        } else if (mapUnmappedFieldAsString){
-            StringFieldMapper.Builder builder = MapperBuilders.stringField(name);
-            // it would be better to pass the real index settings, but they are not easily accessible from here...
-            Settings settings = Settings.builder().put(IndexMetaData.SETTING_VERSION_CREATED, indexQueryParser.getIndexCreatedVersion()).build();
-            return builder.build(new Mapper.BuilderContext(settings, new ContentPath(1))).fieldType();
-        } else {
-            Version indexCreatedVersion = indexQueryParser.getIndexCreatedVersion();
-            if (fieldMapping == null && indexCreatedVersion.onOrAfter(Version.V_1_4_0_Beta1)) {
-                throw new QueryParsingException(this, "Strict field resolution and no field mapping can be found for the field with name ["
-                        + name + "]");
-            } else {
-                return fieldMapping;
-            }
-        }
-    }
-
-    /**
-     * Returns the narrowed down explicit types, or, if not set, all types.
-     */
-    public Collection<String> queryTypes() {
-        String[] types = getTypes();
-        if (types == null || types.length == 0) {
-            return mapperService().types();
-        }
-        if (types.length == 1 && types[0].equals("_all")) {
-            return mapperService().types();
-        }
-        return Arrays.asList(types);
-    }
-
-    private SearchLookup lookup = null;
-
-    public SearchLookup lookup() {
-        SearchContext current = SearchContext.current();
-        if (current != null) {
-            return current.lookup();
-        }
-        if (lookup == null) {
-            lookup = new SearchLookup(mapperService(), indexQueryParser.fieldDataService, null);
-        }
-        return lookup;
-    }
-
-    public long nowInMillis() {
-        SearchContext current = SearchContext.current();
-        if (current != null) {
-            return current.nowInMillis();
-        }
-        return System.currentTimeMillis();
-    }
-
-    public NestedScope nestedScope() {
-        return nestedScope;
-    }
-
-    /**
-     * Return whether the setting is deprecated.
-     */
-    public boolean isDeprecatedSetting(String setting) {
-        return parseFieldMatcher.match(setting, CACHE) || parseFieldMatcher.match(setting, CACHE_KEY);
-    }
-
-    public Version indexVersionCreated() {
-        return indexVersionCreated;
-    }
-
 }

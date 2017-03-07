@@ -19,135 +19,138 @@
 
 package org.elasticsearch.plugins;
 
-import com.google.common.base.Charsets;
-import com.google.common.collect.*;
-
-import org.apache.lucene.util.Constants;
-import org.apache.lucene.util.IOUtils;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.message.ParameterizedMessage;
+import org.apache.logging.log4j.util.Supplier;
+import org.apache.lucene.analysis.util.CharFilterFactory;
+import org.apache.lucene.analysis.util.TokenFilterFactory;
+import org.apache.lucene.analysis.util.TokenizerFactory;
+import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.codecs.DocValuesFormat;
+import org.apache.lucene.codecs.PostingsFormat;
 import org.elasticsearch.ElasticsearchException;
-import org.elasticsearch.Version;
-import org.elasticsearch.action.admin.cluster.node.info.PluginInfo;
-import org.elasticsearch.action.admin.cluster.node.info.PluginsInfo;
+import org.elasticsearch.action.admin.cluster.node.info.PluginsAndModules;
+import org.elasticsearch.bootstrap.JarHell;
 import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.collect.MapBuilder;
 import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.component.AbstractComponent;
 import org.elasticsearch.common.component.LifecycleComponent;
 import org.elasticsearch.common.inject.Module;
 import org.elasticsearch.common.io.FileSystemUtils;
-import org.elasticsearch.common.io.PathUtils;
-import org.elasticsearch.common.logging.ESLogger;
-import org.elasticsearch.common.lucene.Lucene;
+import org.elasticsearch.common.logging.Loggers;
+import org.elasticsearch.common.settings.Setting;
+import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.env.Environment;
+import org.elasticsearch.index.IndexModule;
+import org.elasticsearch.threadpool.ExecutorBuilder;
 
-import java.io.BufferedReader;
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
-import java.nio.file.*;
-import java.util.*;
+import java.net.URLClassLoader;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.elasticsearch.common.io.FileSystemUtils.isAccessibleDirectory;
 
-/**
- *
- */
 public class PluginsService extends AbstractComponent {
-    public static final String ES_PLUGIN_PROPERTIES_FILE_KEY = "plugins.properties_file";
-    public static final String ES_PLUGIN_PROPERTIES = "es-plugin.properties";
-    public static final String LOAD_PLUGIN_FROM_CLASSPATH = "plugins.load_classpath_plugins";
-
-    public static final String PLUGINS_CHECK_LUCENE_KEY = "plugins.check_lucene";
-    public static final String PLUGINS_INFO_REFRESH_INTERVAL_KEY = "plugins.info_refresh_interval";
-
-
-    private final Environment environment;
 
     /**
-     * We keep around a list of jvm plugins
+     * We keep around a list of plugins and modules
      */
-    private final ImmutableList<Tuple<PluginInfo, Plugin>> plugins;
+    private final List<Tuple<PluginInfo, Plugin>> plugins;
+    private final PluginsAndModules info;
+    public static final Setting<List<String>> MANDATORY_SETTING =
+        Setting.listSetting("plugin.mandatory", Collections.emptyList(), Function.identity(), Property.NodeScope);
 
-    private final ImmutableMap<Plugin, List<OnModuleReference>> onModuleReferences;
-    private final String esPluginPropertiesFile;
-    private final boolean loadClasspathPlugins;
+    public List<Setting<?>> getPluginSettings() {
+        return plugins.stream().flatMap(p -> p.v2().getSettings().stream()).collect(Collectors.toList());
+    }
 
-    private PluginsInfo cachedPluginsInfo;
-    private final TimeValue refreshInterval;
-    private final boolean checkLucene;
-    private long lastRefreshNS;
-
-    static class OnModuleReference {
-        public final Class<? extends Module> moduleClass;
-        public final Method onModuleMethod;
-
-        OnModuleReference(Class<? extends Module> moduleClass, Method onModuleMethod) {
-            this.moduleClass = moduleClass;
-            this.onModuleMethod = onModuleMethod;
-        }
+    public List<String> getPluginSettingsFilter() {
+        return plugins.stream().flatMap(p -> p.v2().getSettingsFilter().stream()).collect(Collectors.toList());
     }
 
     /**
      * Constructs a new PluginService
      * @param settings The settings of the system
-     * @param environment The environment of the system
+     * @param modulesDirectory The directory modules exist in, or null if modules should not be loaded from the filesystem
+     * @param pluginsDirectory The directory plugins exist in, or null if plugins should not be loaded from the filesystem
+     * @param classpathPlugins Plugins that exist in the classpath which should be loaded
      */
-    public PluginsService(Settings settings, Environment environment) {
+    public PluginsService(Settings settings, Path modulesDirectory, Path pluginsDirectory, Collection<Class<? extends Plugin>> classpathPlugins) {
         super(settings);
-        this.environment = environment;
-        this.checkLucene = settings.getAsBoolean(PLUGINS_CHECK_LUCENE_KEY, true);
-        this.esPluginPropertiesFile = settings.get(ES_PLUGIN_PROPERTIES_FILE_KEY, ES_PLUGIN_PROPERTIES);
-        this.loadClasspathPlugins = settings.getAsBoolean(LOAD_PLUGIN_FROM_CLASSPATH, true);
 
-        ImmutableList.Builder<Tuple<PluginInfo, Plugin>> tupleBuilder = ImmutableList.builder();
-
-        // first we load all the default plugins from the settings
-        String[] defaultPluginsClasses = settings.getAsArray("plugin.types");
-        for (String pluginClass : defaultPluginsClasses) {
+        List<Tuple<PluginInfo, Plugin>> pluginsLoaded = new ArrayList<>();
+        List<PluginInfo> pluginsList = new ArrayList<>();
+        // first we load plugins that are on the classpath. this is for tests and transport clients
+        for (Class<? extends Plugin> pluginClass : classpathPlugins) {
             Plugin plugin = loadPlugin(pluginClass, settings);
-            PluginInfo pluginInfo = new PluginInfo(plugin.name(), plugin.description(), hasSite(plugin.name()), true, PluginInfo.VERSION_NOT_AVAILABLE);
+            PluginInfo pluginInfo = new PluginInfo(pluginClass.getName(), "classpath plugin", "NA", pluginClass.getName());
             if (logger.isTraceEnabled()) {
-                logger.trace("plugin loaded from settings [{}]", pluginInfo);
+                logger.trace("plugin loaded from classpath [{}]", pluginInfo);
             }
-            tupleBuilder.add(new Tuple<>(pluginInfo, plugin));
+            pluginsLoaded.add(new Tuple<>(pluginInfo, plugin));
+            pluginsList.add(pluginInfo);
         }
 
-        // now, find all the ones that are in the classpath
-        if (loadClasspathPlugins) {
-            tupleBuilder.addAll(loadPluginsFromClasspath(settings));
+        List<PluginInfo> modulesList = new ArrayList<>();
+        // load modules
+        if (modulesDirectory != null) {
+            try {
+                List<Bundle> bundles = getModuleBundles(modulesDirectory);
+                List<Tuple<PluginInfo, Plugin>> loaded = loadBundles(bundles);
+                pluginsLoaded.addAll(loaded);
+                for (Tuple<PluginInfo, Plugin> module : loaded) {
+                    modulesList.add(module.v1());
+                }
+            } catch (IOException ex) {
+                throw new IllegalStateException("Unable to initialize modules", ex);
+            }
         }
-        this.plugins = tupleBuilder.build();
 
-        // We need to build a List of jvm and site plugins for checking mandatory plugins
-        Map<String, Plugin> jvmPlugins = Maps.newHashMap();
-        List<String> sitePlugins = Lists.newArrayList();
+        // now, find all the ones that are in plugins/
+        if (pluginsDirectory != null) {
+            try {
+                List<Bundle> bundles = getPluginBundles(pluginsDirectory);
+                List<Tuple<PluginInfo, Plugin>> loaded = loadBundles(bundles);
+                pluginsLoaded.addAll(loaded);
+                for (Tuple<PluginInfo, Plugin> plugin : loaded) {
+                    pluginsList.add(plugin.v1());
+                }
+            } catch (IOException ex) {
+                throw new IllegalStateException("Unable to initialize plugins", ex);
+            }
+        }
 
+        this.info = new PluginsAndModules(pluginsList, modulesList);
+        this.plugins = Collections.unmodifiableList(pluginsLoaded);
+
+        // We need to build a List of plugins for checking mandatory plugins
+        Set<String> pluginsNames = new HashSet<>();
         for (Tuple<PluginInfo, Plugin> tuple : this.plugins) {
-            jvmPlugins.put(tuple.v2().name(), tuple.v2());
-            if (tuple.v1().isSite()) {
-                sitePlugins.add(tuple.v1().getName());
-            }
-        }
-        try {
-            // we load site plugins
-            ImmutableList<Tuple<PluginInfo, Plugin>> tuples = loadSitePlugins();
-            for (Tuple<PluginInfo, Plugin> tuple : tuples) {
-                sitePlugins.add(tuple.v1().getName());
-            }
-        } catch (IOException ex) {
-            throw new IllegalStateException("Can't load site  plugins", ex);
+            pluginsNames.add(tuple.v1().getName());
         }
 
         // Checking expected plugins
-        String[] mandatoryPlugins = settings.getAsArray("plugin.mandatory", null);
-        if (mandatoryPlugins != null) {
-            Set<String> missingPlugins = Sets.newHashSet();
+        List<String> mandatoryPlugins = MANDATORY_SETTING.get(settings);
+        if (mandatoryPlugins.isEmpty() == false) {
+            Set<String> missingPlugins = new HashSet<>();
             for (String mandatoryPlugin : mandatoryPlugins) {
-                if (!jvmPlugins.containsKey(mandatoryPlugin) && !sitePlugins.contains(mandatoryPlugin) && !missingPlugins.contains(mandatoryPlugin)) {
+                if (!pluginsNames.contains(mandatoryPlugin) && !missingPlugins.contains(mandatoryPlugin)) {
                     missingPlugins.add(mandatoryPlugin);
                 }
             }
@@ -156,391 +159,231 @@ public class PluginsService extends AbstractComponent {
             }
         }
 
-        logger.info("loaded {}, sites {}", jvmPlugins.keySet(), sitePlugins);
-
-        MapBuilder<Plugin, List<OnModuleReference>> onModuleReferences = MapBuilder.newMapBuilder();
-        for (Plugin plugin : jvmPlugins.values()) {
-            List<OnModuleReference> list = Lists.newArrayList();
-            for (Method method : plugin.getClass().getDeclaredMethods()) {
-                if (!method.getName().equals("onModule")) {
-                    continue;
-                }
-                if (method.getParameterTypes().length == 0 || method.getParameterTypes().length > 1) {
-                    logger.warn("Plugin: {} implementing onModule with no parameters or more than one parameter", plugin.name());
-                    continue;
-                }
-                Class moduleClass = method.getParameterTypes()[0];
-                if (!Module.class.isAssignableFrom(moduleClass)) {
-                    logger.warn("Plugin: {} implementing onModule by the type is not of Module type {}", plugin.name(), moduleClass);
-                    continue;
-                }
-                method.setAccessible(true);
-                list.add(new OnModuleReference(moduleClass, method));
-            }
-            if (!list.isEmpty()) {
-                onModuleReferences.put(plugin, list);
-            }
-        }
-        this.onModuleReferences = onModuleReferences.immutableMap();
-
-        this.refreshInterval = settings.getAsTime(PLUGINS_INFO_REFRESH_INTERVAL_KEY, TimeValue.timeValueSeconds(10));
+        // we don't log jars in lib/ we really shouldn't log modules,
+        // but for now: just be transparent so we can debug any potential issues
+        logPluginInfo(info.getModuleInfos(), "module", logger);
+        logPluginInfo(info.getPluginInfos(), "plugin", logger);
     }
 
-    public ImmutableList<Tuple<PluginInfo, Plugin>> plugins() {
-        return plugins;
-    }
-
-    public void processModules(Iterable<Module> modules) {
-        for (Module module : modules) {
-            processModule(module);
-        }
-    }
-
-    public void processModule(Module module) {
-        for (Tuple<PluginInfo, Plugin> plugin : plugins()) {
-            plugin.v2().processModule(module);
-            // see if there are onModule references
-            List<OnModuleReference> references = onModuleReferences.get(plugin.v2());
-            if (references != null) {
-                for (OnModuleReference reference : references) {
-                    if (reference.moduleClass.isAssignableFrom(module.getClass())) {
-                        try {
-                            reference.onModuleMethod.invoke(plugin.v2(), module);
-                        } catch (Exception e) {
-                            logger.warn("plugin {}, failed to invoke custom onModule method", e, plugin.v2().name());
-                        }
-                    }
-                }
+    private static void logPluginInfo(final List<PluginInfo> pluginInfos, final String type, final Logger logger) {
+        assert pluginInfos != null;
+        if (pluginInfos.isEmpty()) {
+            logger.info("no " + type + "s loaded");
+        } else {
+            for (final String name : pluginInfos.stream().map(PluginInfo::getName).sorted().collect(Collectors.toList())) {
+                logger.info("loaded " + type + " [" + name + "]");
             }
         }
     }
 
     public Settings updatedSettings() {
-        Settings.Builder builder = Settings.settingsBuilder()
-                .put(this.settings);
+        Map<String, String> foundSettings = new HashMap<>();
+        final Settings.Builder builder = Settings.builder();
         for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            builder.put(plugin.v2().additionalSettings());
+            Settings settings = plugin.v2().additionalSettings();
+            for (String setting : settings.getAsMap().keySet()) {
+                String oldPlugin = foundSettings.put(setting, plugin.v1().getName());
+                if (oldPlugin != null) {
+                    throw new IllegalArgumentException("Cannot have additional setting [" + setting + "] " +
+                        "in plugin [" + plugin.v1().getName() + "], already added in plugin [" + oldPlugin + "]");
+                }
+            }
+            builder.put(settings);
         }
-        return builder.build();
+        return builder.put(this.settings).build();
     }
 
-    public Collection<Class<? extends Module>> modules() {
-        List<Class<? extends Module>> modules = Lists.newArrayList();
+    public Collection<Module> createGuiceModules() {
+        List<Module> modules = new ArrayList<>();
         for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().modules());
+            modules.addAll(plugin.v2().createGuiceModules());
         }
         return modules;
     }
 
-    public Collection<Module> modules(Settings settings) {
-        List<Module> modules = Lists.newArrayList();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().modules(settings));
+    public List<ExecutorBuilder<?>> getExecutorBuilders(Settings settings) {
+        final ArrayList<ExecutorBuilder<?>> builders = new ArrayList<>();
+        for (final Tuple<PluginInfo, Plugin> plugin : plugins) {
+            builders.addAll(plugin.v2().getExecutorBuilders(settings));
         }
-        return modules;
+        return builders;
     }
 
-    public Collection<Class<? extends LifecycleComponent>> services() {
-        List<Class<? extends LifecycleComponent>> services = Lists.newArrayList();
+    /** Returns all classes injected into guice by plugins which extend {@link LifecycleComponent}. */
+    public Collection<Class<? extends LifecycleComponent>> getGuiceServiceClasses() {
+        List<Class<? extends LifecycleComponent>> services = new ArrayList<>();
         for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            services.addAll(plugin.v2().services());
+            services.addAll(plugin.v2().getGuiceServiceClasses());
         }
         return services;
     }
 
-    public Collection<Class<? extends Module>> indexModules() {
-        List<Class<? extends Module>> modules = Lists.newArrayList();
+    public void onIndexModule(IndexModule indexModule) {
         for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().indexModules());
+            plugin.v2().onIndexModule(indexModule);
         }
-        return modules;
-    }
-
-    public Collection<Module> indexModules(Settings settings) {
-        List<Module> modules = Lists.newArrayList();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().indexModules(settings));
-        }
-        return modules;
-    }
-
-    public Collection<Class<? extends Closeable>> indexServices() {
-        List<Class<? extends Closeable>> services = Lists.newArrayList();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            services.addAll(plugin.v2().indexServices());
-        }
-        return services;
-    }
-
-    public Collection<Class<? extends Module>> shardModules() {
-        List<Class<? extends Module>> modules = Lists.newArrayList();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().shardModules());
-        }
-        return modules;
-    }
-
-    public Collection<Module> shardModules(Settings settings) {
-        List<Module> modules = Lists.newArrayList();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            modules.addAll(plugin.v2().shardModules(settings));
-        }
-        return modules;
-    }
-
-    public Collection<Class<? extends Closeable>> shardServices() {
-        List<Class<? extends Closeable>> services = Lists.newArrayList();
-        for (Tuple<PluginInfo, Plugin> plugin : plugins) {
-            services.addAll(plugin.v2().shardServices());
-        }
-        return services;
     }
 
     /**
-     * Get information about plugins (jvm and site plugins).
-     * Information are cached for 10 seconds by default. Modify `plugins.info_refresh_interval` property if needed.
-     * Setting `plugins.info_refresh_interval` to `-1` will cause infinite caching.
-     * Setting `plugins.info_refresh_interval` to `0` will disable caching.
-     * @return List of plugins information
+     * Get information about plugins and modules
      */
-    synchronized public PluginsInfo info() {
-        if (refreshInterval.millis() != 0) {
-            if (cachedPluginsInfo != null &&
-                    (refreshInterval.millis() < 0 || (System.nanoTime() - lastRefreshNS) < refreshInterval.nanos())) {
-                if (logger.isTraceEnabled()) {
-                    logger.trace("using cache to retrieve plugins info");
-                }
-                return cachedPluginsInfo;
-            }
-            lastRefreshNS = System.nanoTime();
-        }
-
-        if (logger.isTraceEnabled()) {
-            logger.trace("starting to fetch info on plugins");
-        }
-        cachedPluginsInfo = new PluginsInfo();
-
-        // We first add all JvmPlugins
-        for (Tuple<PluginInfo, Plugin> plugin : this.plugins) {
-            if (logger.isTraceEnabled()) {
-                logger.trace("adding jvm plugin [{}]", plugin.v1());
-            }
-            cachedPluginsInfo.add(plugin.v1());
-        }
-
-        try {
-            // We reload site plugins (in case of some changes)
-            for (Tuple<PluginInfo, Plugin> plugin : loadSitePlugins()) {
-                if (logger.isTraceEnabled()) {
-                    logger.trace("adding site plugin [{}]", plugin.v1());
-                }
-                cachedPluginsInfo.add(plugin.v1());
-            }
-        } catch (IOException ex) {
-            logger.warn("can load site plugins info", ex);
-        }
-
-        return cachedPluginsInfo;
+    public PluginsAndModules info() {
+        return info;
     }
 
+    // a "bundle" is a group of plugins in a single classloader
+    // really should be 1-1, but we are not so fortunate
+    static class Bundle {
+        List<PluginInfo> plugins = new ArrayList<>();
+        List<URL> urls = new ArrayList<>();
+    }
 
+    // similar in impl to getPluginBundles, but DO NOT try to make them share code.
+    // we don't need to inherit all the leniency, and things are different enough.
+    static List<Bundle> getModuleBundles(Path modulesDirectory) throws IOException {
+        // damn leniency
+        if (Files.notExists(modulesDirectory)) {
+            return Collections.emptyList();
+        }
+        List<Bundle> bundles = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(modulesDirectory)) {
+            for (Path module : stream) {
+                if (FileSystemUtils.isHidden(module)) {
+                    continue; // skip over .DS_Store etc
+                }
+                PluginInfo info = PluginInfo.readFromProperties(module);
+                Bundle bundle = new Bundle();
+                bundle.plugins.add(info);
+                // gather urls for jar files
+                try (DirectoryStream<Path> jarStream = Files.newDirectoryStream(module, "*.jar")) {
+                    for (Path jar : jarStream) {
+                        // normalize with toRealPath to get symlinks out of our hair
+                        bundle.urls.add(jar.toRealPath().toUri().toURL());
+                    }
+                }
+                bundles.add(bundle);
+            }
+        }
+        return bundles;
+    }
 
-    private List<Tuple<PluginInfo,Plugin>> loadPluginsFromClasspath(Settings settings) {
-        ImmutableList.Builder<Tuple<PluginInfo, Plugin>> plugins = ImmutableList.builder();
+    static List<Bundle> getPluginBundles(Path pluginsDirectory) throws IOException {
+        Logger logger = Loggers.getLogger(PluginsService.class);
 
-        // Trying JVM plugins: looking for es-plugin.properties files
-        try {
-            Enumeration<URL> pluginUrls = settings.getClassLoader().getResources(esPluginPropertiesFile);
+        // TODO: remove this leniency, but tests bogusly rely on it
+        if (!isAccessibleDirectory(pluginsDirectory, logger)) {
+            return Collections.emptyList();
+        }
 
-            // use a set for uniqueness as some classloaders such as groovy's can return the same URL multiple times and
-            // these plugins should only be loaded once
-            HashSet<URL> uniqueUrls = new HashSet<>(Collections.list(pluginUrls));
-            for (URL pluginUrl : uniqueUrls) {
-                Properties pluginProps = new Properties();
-                InputStream is = null;
+        List<Bundle> bundles = new ArrayList<>();
+
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDirectory)) {
+            for (Path plugin : stream) {
+                if (FileSystemUtils.isHidden(plugin)) {
+                    logger.trace("--- skip hidden plugin file[{}]", plugin.toAbsolutePath());
+                    continue;
+                }
+                logger.trace("--- adding plugin [{}]", plugin.toAbsolutePath());
+                final PluginInfo info;
                 try {
-                    is = pluginUrl.openStream();
-                    pluginProps.load(is);
-                    String pluginClassName = pluginProps.getProperty("plugin");
-                    String pluginVersion = pluginProps.getProperty("version", PluginInfo.VERSION_NOT_AVAILABLE);
-                    Plugin plugin = loadPlugin(pluginClassName, settings);
-
-                    // Is it a site plugin as well? Does it have also an embedded _site structure
-                    Path siteFile = environment.pluginsFile().resolve(plugin.name()).resolve("_site");
-                    boolean isSite = isAccessibleDirectory(siteFile, logger);
-                    if (logger.isTraceEnabled()) {
-                        logger.trace("found a jvm plugin [{}], [{}]{}",
-                                plugin.name(), plugin.description(), isSite ? ": with _site structure" : "");
-                    }
-
-                    PluginInfo pluginInfo = new PluginInfo(plugin.name(), plugin.description(), isSite, true, pluginVersion);
-
-                    plugins.add(new Tuple<>(pluginInfo, plugin));
-                } catch (Throwable e) {
-                    logger.warn("failed to load plugin from [" + pluginUrl + "]", e);
-                } finally {
-                    IOUtils.closeWhileHandlingException(is);
+                    info = PluginInfo.readFromProperties(plugin);
+                } catch (IOException e) {
+                    throw new IllegalStateException("Could not load plugin descriptor for existing plugin ["
+                        + plugin.getFileName() + "]. Was the plugin built before 2.0?", e);
                 }
+
+                List<URL> urls = new ArrayList<>();
+                try (DirectoryStream<Path> jarStream = Files.newDirectoryStream(plugin, "*.jar")) {
+                    for (Path jar : jarStream) {
+                        // normalize with toRealPath to get symlinks out of our hair
+                        urls.add(jar.toRealPath().toUri().toURL());
+                    }
+                }
+                final Bundle bundle = new Bundle();
+                bundles.add(bundle);
+                bundle.plugins.add(info);
+                bundle.urls.addAll(urls);
             }
-        } catch (IOException e) {
-            logger.warn("failed to find jvm plugins from classpath", e);
         }
 
-        return plugins.build();
+        return bundles;
     }
 
-    private ImmutableList<Tuple<PluginInfo,Plugin>> loadSitePlugins() throws IOException {
-        ImmutableList.Builder<Tuple<PluginInfo, Plugin>> sitePlugins = ImmutableList.builder();
-        List<String> loadedJvmPlugins = new ArrayList<>();
+    private List<Tuple<PluginInfo,Plugin>> loadBundles(List<Bundle> bundles) {
+        List<Tuple<PluginInfo, Plugin>> plugins = new ArrayList<>();
 
-        // Already known jvm plugins are ignored
-        for(Tuple<PluginInfo, Plugin> tuple : plugins) {
-            if (tuple.v1().isSite()) {
-                loadedJvmPlugins.add(tuple.v1().getName());
+        for (Bundle bundle : bundles) {
+            // jar-hell check the bundle against the parent classloader
+            // pluginmanager does it, but we do it again, in case lusers mess with jar files manually
+            try {
+                final List<URL> jars = new ArrayList<>();
+                jars.addAll(Arrays.asList(JarHell.parseClassPath()));
+                jars.addAll(bundle.urls);
+                JarHell.checkJarHell(jars.toArray(new URL[0]));
+            } catch (Exception e) {
+                throw new IllegalStateException("failed to load bundle " + bundle.urls + " due to jar hell", e);
+            }
+
+            // create a child to load the plugins in this bundle
+            ClassLoader loader = URLClassLoader.newInstance(bundle.urls.toArray(new URL[0]), getClass().getClassLoader());
+            for (PluginInfo pluginInfo : bundle.plugins) {
+                // reload lucene SPI with any new services from the plugin
+                reloadLuceneSPI(loader);
+                final Class<? extends Plugin> pluginClass = loadPluginClass(pluginInfo.getClassname(), loader);
+                final Plugin plugin = loadPlugin(pluginClass, settings);
+                plugins.add(new Tuple<>(pluginInfo, plugin));
             }
         }
 
-        // Let's try to find all _site plugins we did not already found
-        Path pluginsFile = environment.pluginsFile();
-
-        if (FileSystemUtils.isAccessibleDirectory(pluginsFile, logger) == false) {
-            return sitePlugins.build();
-        }
-
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsFile)) {
-            for (Path pluginFile : stream) {
-                if (!loadedJvmPlugins.contains(pluginFile.getFileName().toString())) {
-                    Path sitePluginDir = pluginFile.resolve("_site");
-                    if (isAccessibleDirectory(sitePluginDir, logger)) {
-                        // We have a _site plugin. Let's try to get more information on it
-                        String name = pluginFile.getFileName().toString();
-                        String version = PluginInfo.VERSION_NOT_AVAILABLE;
-                        String description = PluginInfo.DESCRIPTION_NOT_AVAILABLE;
-
-                        // We check if es-plugin.properties exists in plugin/_site dir
-                        final Path pluginPropFile = sitePluginDir.resolve(esPluginPropertiesFile);
-                        if (Files.exists(pluginPropFile)) {
-
-                            final Properties pluginProps = new Properties();
-                            try (final BufferedReader reader = Files.newBufferedReader(pluginPropFile, Charsets.UTF_8)) {
-                                pluginProps.load(reader);
-                                description = pluginProps.getProperty("description", PluginInfo.DESCRIPTION_NOT_AVAILABLE);
-                                version = pluginProps.getProperty("version", PluginInfo.VERSION_NOT_AVAILABLE);
-                            } catch (Exception e) {
-                                // Can not load properties for this site plugin. Ignoring.
-                                logger.debug("can not load {} file.", e, esPluginPropertiesFile);
-                            }
-                        }
-
-                        if (logger.isTraceEnabled()) {
-                            logger.trace("found a site plugin name [{}], version [{}], description [{}]",
-                                    name, version, description);
-                        }
-                        sitePlugins.add(new Tuple<PluginInfo, Plugin>(new PluginInfo(name, description, true, false, version), null));
-                    }
-                }
-            }
-        }
-        return sitePlugins.build();
+        return Collections.unmodifiableList(plugins);
     }
 
     /**
-     * @param name plugin name
-     * @return if this jvm plugin has also a _site structure
+     * Reloads all Lucene SPI implementations using the new classloader.
+     * This method must be called after the new classloader has been created to
+     * register the services for use.
      */
-    private boolean hasSite(String name) {
-        // Let's try to find all _site plugins we did not already found
-        Path pluginsFile = environment.pluginsFile();
+    static void reloadLuceneSPI(ClassLoader loader) {
+        // do NOT change the order of these method calls!
 
-        if (!Files.isDirectory(pluginsFile)) {
-            return false;
-        }
-
-        Path sitePluginDir = pluginsFile.resolve(name).resolve("_site");
-        return isAccessibleDirectory(sitePluginDir, logger);
+        // Codecs:
+        PostingsFormat.reloadPostingsFormats(loader);
+        DocValuesFormat.reloadDocValuesFormats(loader);
+        Codec.reloadCodecs(loader);
+        // Analysis:
+        CharFilterFactory.reloadCharFilters(loader);
+        TokenFilterFactory.reloadTokenFilters(loader);
+        TokenizerFactory.reloadTokenizers(loader);
     }
 
-    private Plugin loadPlugin(String className, Settings settings) {
+    private Class<? extends Plugin> loadPluginClass(String className, ClassLoader loader) {
         try {
-            Class<? extends Plugin> pluginClass = (Class<? extends Plugin>) settings.getClassLoader().loadClass(className);
-            Plugin plugin;
+            return loader.loadClass(className).asSubclass(Plugin.class);
+        } catch (ClassNotFoundException e) {
+            throw new ElasticsearchException("Could not find plugin class [" + className + "]", e);
+        }
+    }
 
-            if (!checkLucene || checkLuceneCompatibility(pluginClass, settings, logger, esPluginPropertiesFile)) {
+    private Plugin loadPlugin(Class<? extends Plugin> pluginClass, Settings settings) {
+        try {
+            try {
+                return pluginClass.getConstructor(Settings.class).newInstance(settings);
+            } catch (NoSuchMethodException e) {
                 try {
-                    plugin = pluginClass.getConstructor(Settings.class).newInstance(settings);
-                } catch (NoSuchMethodException e) {
-                    try {
-                        plugin = pluginClass.getConstructor().newInstance();
-                    } catch (NoSuchMethodException e1) {
-                        throw new ElasticsearchException("No constructor for [" + pluginClass + "]. A plugin class must " +
-                                "have either an empty default constructor or a single argument constructor accepting a " +
-                                "Settings instance");
-                    }
+                    return pluginClass.getConstructor().newInstance();
+                } catch (NoSuchMethodException e1) {
+                    throw new ElasticsearchException("No constructor for [" + pluginClass + "]. A plugin class must " +
+                        "have either an empty default constructor or a single argument constructor accepting a " +
+                        "Settings instance");
                 }
-            } else {
-                throw new ElasticsearchException("Plugin is incompatible with the current node");
             }
-
-
-            return plugin;
-
-        } catch (Throwable e) {
-            throw new ElasticsearchException("Failed to load plugin class [" + className + "]", e);
+        } catch (Exception e) {
+            throw new ElasticsearchException("Failed to load plugin class [" + pluginClass.getName() + "]", e);
         }
     }
 
-    /**
-     * <p>Check that a plugin is Lucene compatible with the current running node using `lucene` property
-     * in `es-plugin.properties` file.</p>
-     * <p>If plugin does not provide `lucene` property, we consider that the plugin is compatible.</p>
-     * <p>If plugin provides `lucene` property, we try to load related Enum org.apache.lucene.util.Version. If this
-     * fails, it means that the node is too "old" comparing to the Lucene version the plugin was built for.</p>
-     * <p>We compare then two first digits of current node lucene version against two first digits of plugin Lucene
-     * version. If not equal, it means that the plugin is too "old" for the current node.</p>
-     *
-     * @param pluginClass Plugin class we are checking
-     * @return true if the plugin is Lucene compatible
-     */
-    public static boolean checkLuceneCompatibility(Class<? extends Plugin> pluginClass, Settings settings, ESLogger logger, String propertiesFile) {
-        String luceneVersion = null;
-        try {
-            // We try to read the es-plugin.properties file
-            // But as we can have several plugins in the same classloader,
-            // we have to find the right es-plugin.properties file
-            Enumeration<URL> pluginUrls = settings.getClassLoader().getResources(propertiesFile);
-
-            while (pluginUrls.hasMoreElements()) {
-                URL pluginUrl = pluginUrls.nextElement();
-                try (InputStream is = pluginUrl.openStream()) {
-                    Properties pluginProps = new Properties();
-                    pluginProps.load(is);
-                    String plugin = pluginProps.getProperty("plugin");
-                    // If we don't have the expected plugin, let's continue to the next one
-                    if (pluginClass.getName().equals(plugin)) {
-                        luceneVersion = pluginProps.getProperty("lucene");
-                        break;
-                    }
-                    logger.debug("skipping [{}]", pluginUrl);
-                }
-            }
-
-            if (luceneVersion != null) {
-                // Should fail if the running node is too old!
-                org.apache.lucene.util.Version luceneExpectedVersion = Lucene.parseVersionLenient(luceneVersion, null);
-                if (Version.CURRENT.luceneVersion.equals(luceneExpectedVersion)) {
-                    logger.debug("starting analysis plugin for Lucene [{}].", luceneExpectedVersion);
-                    return true;
-                }
-            } else {
-                logger.debug("lucene property is not set in plugin {} file. Skipping test.", propertiesFile);
-                return true;
-            }
-        } catch (Throwable t) {
-            // We don't have the expected version... Let's fail after.
-            logger.debug("exception raised while checking plugin Lucene version.", t);
-        }
-        logger.error("cannot start plugin due to incorrect Lucene version: plugin [{}], node [{}].",
-                luceneVersion, Constants.LUCENE_MAIN_VERSION);
-        return false;
+    public <T> List<T> filterPlugins(Class<T> type) {
+        return plugins.stream().filter(x -> type.isAssignableFrom(x.v2().getClass()))
+            .map(p -> ((T)p.v2())).collect(Collectors.toList());
     }
 }

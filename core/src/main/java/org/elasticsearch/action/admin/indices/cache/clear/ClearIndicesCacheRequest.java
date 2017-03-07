@@ -25,9 +25,6 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 
 import java.io.IOException;
 
-/**
- *
- */
 public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCacheRequest> {
 
     private boolean queryCache = false;
@@ -37,7 +34,7 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
     private String[] fields = null;
     
 
-    ClearIndicesCacheRequest() {
+    public ClearIndicesCacheRequest() {
     }
 
     public ClearIndicesCacheRequest(String... indices) {

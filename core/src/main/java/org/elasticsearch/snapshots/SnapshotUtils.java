@@ -18,11 +18,14 @@
  */
 package org.elasticsearch.snapshots;
 
-import com.google.common.collect.ImmutableList;
 import org.elasticsearch.action.support.IndicesOptions;
+import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver;
 import org.elasticsearch.common.regex.Regex;
 import org.elasticsearch.index.IndexNotFoundException;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -41,7 +44,7 @@ public class SnapshotUtils {
      * @return filtered out indices
      */
     public static List<String> filterIndices(List<String> availableIndices, String[] selectedIndices, IndicesOptions indicesOptions) {
-        if (selectedIndices == null || selectedIndices.length == 0) {
+        if (IndexNameExpressionResolver.isAllIndices(Arrays.asList(selectedIndices))) {
             return availableIndices;
         }
         Set<String> result = null;
@@ -50,9 +53,10 @@ public class SnapshotUtils {
             boolean add = true;
             if (!indexOrPattern.isEmpty()) {
                 if (availableIndices.contains(indexOrPattern)) {
-                    if (result != null) {
-                        result.add(indexOrPattern);
+                    if (result == null) {
+                        result = new HashSet<>();
                     }
+                    result.add(indexOrPattern);
                     continue;
                 }
                 if (indexOrPattern.charAt(0) == '+') {
@@ -114,8 +118,8 @@ public class SnapshotUtils {
             }
         }
         if (result == null) {
-            return ImmutableList.copyOf(selectedIndices);
+            return Collections.unmodifiableList(new ArrayList<>(Arrays.asList(selectedIndices)));
         }
-        return ImmutableList.copyOf(result);
+        return Collections.unmodifiableList(new ArrayList<>(result));
     }
 }

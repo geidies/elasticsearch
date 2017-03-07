@@ -19,16 +19,16 @@
 
 package org.elasticsearch.rest;
 
-import com.google.common.collect.Lists;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.bytes.BytesReference;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/**
- *
- */
 public abstract class RestResponse {
 
     protected Map<String, List<String>> customHeaders;
@@ -58,7 +58,7 @@ public abstract class RestResponse {
         for (String key : headerKeySet) {
             List<String> values = customHeaders.get(key);
             if (values == null) {
-                values = Lists.newArrayList();
+                values = new ArrayList<>();
                 customHeaders.put(key, values);
             }
             values.addAll(ex.getHeader(key));

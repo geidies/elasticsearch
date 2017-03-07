@@ -26,13 +26,16 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.discovery.DiscoveryStats;
 import org.elasticsearch.http.HttpStats;
 import org.elasticsearch.indices.NodeIndicesStats;
 import org.elasticsearch.indices.breaker.AllCircuitBreakerStats;
+import org.elasticsearch.ingest.IngestStats;
 import org.elasticsearch.monitor.fs.FsInfo;
 import org.elasticsearch.monitor.jvm.JvmStats;
 import org.elasticsearch.monitor.os.OsStats;
 import org.elasticsearch.monitor.process.ProcessStats;
+import org.elasticsearch.script.ScriptStats;
 import org.elasticsearch.threadpool.ThreadPoolStats;
 import org.elasticsearch.transport.TransportStats;
 
@@ -73,13 +76,25 @@ public class NodeStats extends BaseNodeResponse implements ToXContent {
     @Nullable
     private AllCircuitBreakerStats breaker;
 
+    @Nullable
+    private ScriptStats scriptStats;
+
+    @Nullable
+    private DiscoveryStats discoveryStats;
+
+    @Nullable
+    private IngestStats ingestStats;
+
     NodeStats() {
     }
 
     public NodeStats(DiscoveryNode node, long timestamp, @Nullable NodeIndicesStats indices,
                      @Nullable OsStats os, @Nullable ProcessStats process, @Nullable JvmStats jvm, @Nullable ThreadPoolStats threadPool,
                      @Nullable FsInfo fs, @Nullable TransportStats transport, @Nullable HttpStats http,
-                     @Nullable AllCircuitBreakerStats breaker) {
+                     @Nullable AllCircuitBreakerStats breaker,
+                     @Nullable ScriptStats scriptStats,
+                     @Nullable DiscoveryStats discoveryStats,
+                     @Nullable IngestStats ingestStats) {
         super(node);
         this.timestamp = timestamp;
         this.indices = indices;
@@ -91,6 +106,9 @@ public class NodeStats extends BaseNodeResponse implements ToXContent {
         this.transport = transport;
         this.http = http;
         this.breaker = breaker;
+        this.scriptStats = scriptStats;
+        this.discoveryStats = discoveryStats;
+        this.ingestStats = ingestStats;
     }
 
     public long getTimestamp() {
@@ -165,6 +183,21 @@ public class NodeStats extends BaseNodeResponse implements ToXContent {
         return this.breaker;
     }
 
+    @Nullable
+    public ScriptStats getScriptStats() {
+        return this.scriptStats;
+    }
+
+    @Nullable
+    public DiscoveryStats getDiscoveryStats() {
+        return this.discoveryStats;
+    }
+
+    @Nullable
+    public IngestStats getIngestStats() {
+        return ingestStats;
+    }
+
     public static NodeStats readNodeStats(StreamInput in) throws IOException {
         NodeStats nodeInfo = new NodeStats();
         nodeInfo.readFrom(in);
@@ -178,29 +211,17 @@ public class NodeStats extends BaseNodeResponse implements ToXContent {
         if (in.readBoolean()) {
             indices = NodeIndicesStats.readIndicesStats(in);
         }
-        if (in.readBoolean()) {
-            os = OsStats.readOsStats(in);
-        }
-        if (in.readBoolean()) {
-            process = ProcessStats.readProcessStats(in);
-        }
-        if (in.readBoolean()) {
-            jvm = JvmStats.readJvmStats(in);
-        }
-        if (in.readBoolean()) {
-            threadPool = ThreadPoolStats.readThreadPoolStats(in);
-        }
-        if (in.readBoolean()) {
-            fs = FsInfo.readFsInfo(in);
-        }
-        if (in.readBoolean()) {
-            transport = TransportStats.readTransportStats(in);
-        }
-        if (in.readBoolean()) {
-            http = HttpStats.readHttpStats(in);
-        }
-        breaker = AllCircuitBreakerStats.readOptionalAllCircuitBreakerStats(in);
-
+        os = in.readOptionalWriteable(OsStats::new);
+        process = in.readOptionalWriteable(ProcessStats::new);
+        jvm = in.readOptionalWriteable(JvmStats::new);
+        threadPool = in.readOptionalWriteable(ThreadPoolStats::new);
+        fs = in.readOptionalWriteable(FsInfo::new);
+        transport = in.readOptionalWriteable(TransportStats::new);
+        http = in.readOptionalWriteable(HttpStats::new);
+        breaker = in.readOptionalWriteable(AllCircuitBreakerStats::new);
+        scriptStats = in.readOptionalWriteable(ScriptStats::new);
+        discoveryStats = in.readOptionalWriteable(DiscoveryStats::new);
+        ingestStats = in.readOptionalWriteable(IngestStats::new);
     }
 
     @Override
@@ -213,72 +234,44 @@ public class NodeStats extends BaseNodeResponse implements ToXContent {
             out.writeBoolean(true);
             indices.writeTo(out);
         }
-        if (os == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            os.writeTo(out);
-        }
-        if (process == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            process.writeTo(out);
-        }
-        if (jvm == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            jvm.writeTo(out);
-        }
-        if (threadPool == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            threadPool.writeTo(out);
-        }
-        if (fs == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            fs.writeTo(out);
-        }
-        if (transport == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            transport.writeTo(out);
-        }
-        if (http == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            http.writeTo(out);
-        }
-        out.writeOptionalStreamable(breaker);
+        out.writeOptionalWriteable(os);
+        out.writeOptionalWriteable(process);
+        out.writeOptionalWriteable(jvm);
+        out.writeOptionalWriteable(threadPool);
+        out.writeOptionalWriteable(fs);
+        out.writeOptionalWriteable(transport);
+        out.writeOptionalWriteable(http);
+        out.writeOptionalWriteable(breaker);
+        out.writeOptionalWriteable(scriptStats);
+        out.writeOptionalWriteable(discoveryStats);
+        out.writeOptionalWriteable(ingestStats);
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        if (!params.param("node_info_format", "default").equals("none")) {
-            builder.field("name", getNode().name(), XContentBuilder.FieldCaseConversion.NONE);
-            builder.field("transport_address", getNode().address().toString(), XContentBuilder.FieldCaseConversion.NONE);
-            builder.field("host", getNode().getHostName(), XContentBuilder.FieldCaseConversion.NONE);
-            builder.field("ip", getNode().getAddress(), XContentBuilder.FieldCaseConversion.NONE);
 
-            if (!getNode().attributes().isEmpty()) {
-                builder.startObject("attributes");
-                for (Map.Entry<String, String> attr : getNode().attributes().entrySet()) {
-                    builder.field(attr.getKey(), attr.getValue(), XContentBuilder.FieldCaseConversion.NONE);
-                }
-                builder.endObject();
+        builder.field("name", getNode().getName());
+        builder.field("transport_address", getNode().getAddress().toString());
+        builder.field("host", getNode().getHostName());
+        builder.field("ip", getNode().getAddress());
+
+        builder.startArray("roles");
+        for (DiscoveryNode.Role role : getNode().getRoles()) {
+            builder.value(role.getRoleName());
+        }
+        builder.endArray();
+
+        if (!getNode().getAttributes().isEmpty()) {
+            builder.startObject("attributes");
+            for (Map.Entry<String, String> attrEntry : getNode().getAttributes().entrySet()) {
+                builder.field(attrEntry.getKey(), attrEntry.getValue());
             }
+            builder.endObject();
         }
 
         if (getIndices() != null) {
             getIndices().toXContent(builder, params);
         }
-
         if (getOs() != null) {
             getOs().toXContent(builder, params);
         }
@@ -303,7 +296,15 @@ public class NodeStats extends BaseNodeResponse implements ToXContent {
         if (getBreaker() != null) {
             getBreaker().toXContent(builder, params);
         }
-
+        if (getScriptStats() != null) {
+            getScriptStats().toXContent(builder, params);
+        }
+        if (getDiscoveryStats() != null) {
+            getDiscoveryStats().toXContent(builder, params);
+        }
+        if (getIngestStats() != null) {
+            getIngestStats().toXContent(builder, params);
+        }
         return builder;
     }
 }

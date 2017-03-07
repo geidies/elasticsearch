@@ -43,7 +43,7 @@ public enum SimpleQueryStringFlag {
 
     final int value;
 
-    private SimpleQueryStringFlag(int value) {
+    SimpleQueryStringFlag(int value) {
         this.value = value;
     }
 
@@ -71,7 +71,7 @@ public enum SimpleQueryStringFlag {
                         magic |= flag.value();
                 }
             } catch (IllegalArgumentException iae) {
-                throw new IllegalArgumentException("Unknown " + SimpleQueryStringParser.NAME + " flag [" + s + "]");
+                throw new IllegalArgumentException("Unknown " + SimpleQueryStringBuilder.NAME + " flag [" + s + "]");
             }
         }
         return magic;

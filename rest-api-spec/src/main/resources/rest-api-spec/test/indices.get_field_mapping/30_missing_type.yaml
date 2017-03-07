@@ -9,16 +9,13 @@
                 test_type:
                   properties:
                     text:
-                      type:     string
+                      type:     text
                       analyzer: whitespace
-  - do:
-         cluster.health:
-           wait_for_status: yellow
 
   - do:
       catch: missing
       indices.get_field_mapping:
         index: test_index
         type: not_test_type
-        field: text
+        fields: text
   

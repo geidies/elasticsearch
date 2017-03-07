@@ -24,9 +24,6 @@ import org.elasticsearch.common.io.stream.StreamInput;
 
 import java.io.IOException;
 
-/**
- *
- */
 public class MapperException extends ElasticsearchException {
     public MapperException(StreamInput in) throws IOException {
         super(in);
@@ -38,5 +35,9 @@ public class MapperException extends ElasticsearchException {
 
     public MapperException(String message, Throwable cause) {
         super(message, cause);
+    }
+
+    public MapperException(String message, Throwable cause, Object... args) {
+        super(message, cause, args);
     }
 }

@@ -25,36 +25,27 @@ import org.apache.lucene.analysis.core.LowerCaseTokenizer;
 import org.apache.lucene.analysis.core.WhitespaceTokenizer;
 import org.apache.lucene.analysis.ngram.EdgeNGramTokenizer;
 import org.apache.lucene.analysis.ngram.NGramTokenizer;
-import org.apache.lucene.analysis.ngram.Lucene43EdgeNGramTokenizer;
-import org.apache.lucene.analysis.ngram.Lucene43NGramTokenizer;
 import org.apache.lucene.analysis.path.PathHierarchyTokenizer;
 import org.apache.lucene.analysis.pattern.PatternTokenizer;
 import org.apache.lucene.analysis.standard.ClassicTokenizer;
 import org.apache.lucene.analysis.standard.StandardTokenizer;
 import org.apache.lucene.analysis.standard.UAX29URLEmailTokenizer;
-import org.apache.lucene.analysis.standard.std40.StandardTokenizer40;
-import org.apache.lucene.analysis.standard.std40.UAX29URLEmailTokenizer40;
 import org.apache.lucene.analysis.th.ThaiTokenizer;
 import org.elasticsearch.Version;
 import org.elasticsearch.common.regex.Regex;
+import org.elasticsearch.index.analysis.MultiTermAwareComponent;
+import org.elasticsearch.index.analysis.TokenFilterFactory;
 import org.elasticsearch.index.analysis.TokenizerFactory;
 import org.elasticsearch.indices.analysis.PreBuiltCacheFactory.CachingStrategy;
 
 import java.util.Locale;
 
-/**
- *
- */
 public enum PreBuiltTokenizers {
 
     STANDARD(CachingStrategy.LUCENE) {
         @Override
         protected Tokenizer create(Version version) {
-            if (version.luceneVersion.onOrAfter(org.apache.lucene.util.Version.LUCENE_4_7_0)) {
-                return new StandardTokenizer();
-            } else {
-                return new StandardTokenizer40();
-            }
+            return new StandardTokenizer();
         }
     },
 
@@ -68,11 +59,7 @@ public enum PreBuiltTokenizers {
     UAX_URL_EMAIL(CachingStrategy.LUCENE) {
         @Override
         protected Tokenizer create(Version version) {
-            if (version.luceneVersion.onOrAfter(org.apache.lucene.util.Version.LUCENE_4_7_0)) {
-                return new UAX29URLEmailTokenizer();
-            } else {
-                return new UAX29URLEmailTokenizer40();
-            }
+            return new UAX29URLEmailTokenizer();
         }
     },
 
@@ -102,6 +89,10 @@ public enum PreBuiltTokenizers {
         protected Tokenizer create(Version version) {
             return new LowerCaseTokenizer();
         }
+        @Override
+        protected TokenFilterFactory getMultiTermComponent(Version version) {
+            return PreBuiltTokenFilters.LOWERCASE.getTokenFilterFactory(version);
+        }
     },
 
     WHITESPACE(CachingStrategy.LUCENE) {
@@ -114,28 +105,14 @@ public enum PreBuiltTokenizers {
     NGRAM(CachingStrategy.LUCENE) {
         @Override
         protected Tokenizer create(Version version) {
-            // see NGramTokenizerFactory for an explanation of this logic:
-            // 4.4 patch was used before 4.4 was released
-            if (version.onOrAfter(org.elasticsearch.Version.V_0_90_2) && 
-                  version.luceneVersion.onOrAfter(org.apache.lucene.util.Version.LUCENE_4_3)) {
-                return new NGramTokenizer();
-            } else {
-                return new Lucene43NGramTokenizer();
-            }
+            return new NGramTokenizer();
         }
     },
 
     EDGE_NGRAM(CachingStrategy.LUCENE) {
         @Override
         protected Tokenizer create(Version version) {
-            // see EdgeNGramTokenizerFactory for an explanation of this logic:
-            // 4.4 patch was used before 4.4 was released
-            if (version.onOrAfter(org.elasticsearch.Version.V_0_90_2) && 
-                  version.luceneVersion.onOrAfter(org.apache.lucene.util.Version.LUCENE_4_3)) {
-                return new EdgeNGramTokenizer(EdgeNGramTokenizer.DEFAULT_MIN_GRAM_SIZE, EdgeNGramTokenizer.DEFAULT_MAX_GRAM_SIZE);
-            } else {
-                return new Lucene43EdgeNGramTokenizer(EdgeNGramTokenizer.DEFAULT_MIN_GRAM_SIZE, EdgeNGramTokenizer.DEFAULT_MAX_GRAM_SIZE);
-            }
+            return new EdgeNGramTokenizer(EdgeNGramTokenizer.DEFAULT_MIN_GRAM_SIZE, EdgeNGramTokenizer.DEFAULT_MAX_GRAM_SIZE);
         }
     },
 
@@ -155,7 +132,11 @@ public enum PreBuiltTokenizers {
 
     ;
 
-    abstract protected Tokenizer create(Version version);
+    protected abstract  Tokenizer create(Version version);
+
+    protected TokenFilterFactory getMultiTermComponent(Version version) {
+        return null;
+    }
 
     protected final PreBuiltCacheFactory.PreBuiltCache<TokenizerFactory> cache;
 
@@ -164,22 +145,42 @@ public enum PreBuiltTokenizers {
         cache = PreBuiltCacheFactory.getCache(cachingStrategy);
     }
 
+    private interface MultiTermAwareTokenizerFactory extends TokenizerFactory, MultiTermAwareComponent {}
+
     public synchronized TokenizerFactory getTokenizerFactory(final Version version) {
         TokenizerFactory tokenizerFactory = cache.get(version);
         if (tokenizerFactory == null) {
-            final String finalName = name();
+            final String finalName = name().toLowerCase(Locale.ROOT);
+            if (getMultiTermComponent(version) != null) {
+                tokenizerFactory = new MultiTermAwareTokenizerFactory() {
+                    @Override
+                    public String name() {
+                        return finalName;
+                    }
 
-            tokenizerFactory = new TokenizerFactory() {
-                @Override
-                public String name() {
-                    return finalName.toLowerCase(Locale.ROOT);
-                }
+                    @Override
+                    public Tokenizer create() {
+                        return PreBuiltTokenizers.this.create(version);
+                    }
 
-                @Override
-                public Tokenizer create() {
-                    return valueOf(finalName).create(version);
-                }
-            };
+                    @Override
+                    public Object getMultiTermComponent() {
+                        return PreBuiltTokenizers.this.getMultiTermComponent(version);
+                    }
+                };
+            } else {
+                tokenizerFactory = new TokenizerFactory() {
+                    @Override
+                    public String name() {
+                        return finalName;
+                    }
+
+                    @Override
+                    public Tokenizer create() {
+                        return PreBuiltTokenizers.this.create(version);
+                    }
+                };
+            }
             cache.put(version, tokenizerFactory);
         }
 

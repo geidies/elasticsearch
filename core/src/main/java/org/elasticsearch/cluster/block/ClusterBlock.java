@@ -31,9 +31,6 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.Locale;
 
-/**
- *
- */
 public class ClusterBlock implements Streamable, ToXContent {
 
     private int id;
@@ -155,8 +152,10 @@ public class ClusterBlock implements Streamable, ToXContent {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append(id).append(",").append(description).append(", blocks ");
+        String delimiter = "";
         for (ClusterBlockLevel level : levels) {
-            sb.append(level.name()).append(",");
+            sb.append(delimiter).append(level.name());
+            delimiter = ",";
         }
         return sb.toString();
     }

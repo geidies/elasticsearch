@@ -28,10 +28,10 @@ import java.io.IOException;
 
 /**
  * A request to get indices level stats. Allow to enable different stats to be returned.
- * <p/>
- * <p>By default, all statistics are enabled.
- * <p/>
- * <p>All the stats to be returned can be cleared using {@link #clear()}, at which point, specific
+ * <p>
+ * By default, all statistics are enabled.
+ * <p>
+ * All the stats to be returned can be cleared using {@link #clear()}, at which point, specific
  * stats can be enabled.
  */
 public class IndicesStatsRequest extends BroadcastRequest<IndicesStatsRequest> {
@@ -184,15 +184,6 @@ public class IndicesStatsRequest extends BroadcastRequest<IndicesStatsRequest> {
         return flags.isSet(Flag.FieldData);
     }
 
-    public IndicesStatsRequest percolate(boolean percolate) {
-        flags.set(Flag.Percolate, percolate);
-        return this;
-    }
-
-    public boolean percolate() {
-        return flags.isSet(Flag.Percolate);
-    }
-
     public IndicesStatsRequest segments(boolean segments) {
         flags.set(Flag.Segments, segments);
         return this;
@@ -265,6 +256,15 @@ public class IndicesStatsRequest extends BroadcastRequest<IndicesStatsRequest> {
         return flags.isSet(Flag.Recovery);
     }
 
+    public boolean includeSegmentFileSizes() {
+        return flags.includeSegmentFileSizes();
+    }
+
+    public IndicesStatsRequest includeSegmentFileSizes(boolean includeSegmentFileSizes) {
+        flags.includeSegmentFileSizes(includeSegmentFileSizes);
+        return this;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -274,6 +274,6 @@ public class IndicesStatsRequest extends BroadcastRequest<IndicesStatsRequest> {
     @Override
     public void readFrom(StreamInput in) throws IOException {
         super.readFrom(in);
-        flags = CommonStatsFlags.readCommonStatsFlags(in);
+        flags = new CommonStatsFlags(in);
     }
 }

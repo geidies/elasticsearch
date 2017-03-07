@@ -18,24 +18,30 @@
  */
 package org.elasticsearch.repositories.blobstore;
 
-import com.google.common.io.ByteStreams;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.IndexFormatTooNewException;
 import org.apache.lucene.index.IndexFormatTooOldException;
 import org.apache.lucene.store.OutputStreamIndexOutput;
-import org.elasticsearch.common.ParseFieldMatcher;
+import org.elasticsearch.common.CheckedFunction;
 import org.elasticsearch.common.blobstore.BlobContainer;
 import org.elasticsearch.common.bytes.BytesArray;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.compress.CompressorFactory;
+import org.elasticsearch.common.io.Streams;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.lucene.store.ByteArrayIndexInput;
 import org.elasticsearch.common.lucene.store.IndexOutputOutputStream;
-import org.elasticsearch.common.xcontent.*;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
+import org.elasticsearch.common.xcontent.ToXContent;
+import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.common.xcontent.XContentParser;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.gateway.CorruptStateException;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -68,8 +74,9 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
      * @param compress       true if the content should be compressed
      * @param xContentType   content type that should be used for write operations
      */
-    public ChecksumBlobStoreFormat(String codec, String blobNameFormat, FromXContentBuilder<T> reader, ParseFieldMatcher parseFieldMatcher, boolean compress, XContentType xContentType) {
-        super(blobNameFormat, reader, parseFieldMatcher);
+    public ChecksumBlobStoreFormat(String codec, String blobNameFormat, CheckedFunction<XContentParser, T, IOException> reader,
+                                   NamedXContentRegistry namedXContentRegistry, boolean compress, XContentType xContentType) {
+        super(blobNameFormat, reader, namedXContentRegistry);
         this.xContentType = xContentType;
         this.compress = compress;
         this.codec = codec;
@@ -81,8 +88,9 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
      * @param reader         prototype object that can deserialize T from XContent
      * @param compress       true if the content should be compressed
      */
-    public ChecksumBlobStoreFormat(String codec, String blobNameFormat, FromXContentBuilder<T> reader, ParseFieldMatcher parseFieldMatcher, boolean compress) {
-        this(codec, blobNameFormat, reader, parseFieldMatcher, compress, DEFAULT_X_CONTENT_TYPE);
+    public ChecksumBlobStoreFormat(String codec, String blobNameFormat, CheckedFunction<XContentParser, T, IOException> reader,
+                                   NamedXContentRegistry namedXContentRegistry, boolean compress) {
+        this(codec, blobNameFormat, reader, namedXContentRegistry, compress, DEFAULT_X_CONTENT_TYPE);
     }
 
     /**
@@ -90,12 +98,12 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
      *
      * @param blobContainer blob container
      * @param blobName blob name
-     * @return
-     * @throws IOException
      */
     public T readBlob(BlobContainer blobContainer, String blobName) throws IOException {
-        try (InputStream inputStream = blobContainer.openInput(blobName)) {
-            byte[] bytes = ByteStreams.toByteArray(inputStream);
+        try (InputStream inputStream = blobContainer.readBlob(blobName)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            Streams.copy(inputStream, out);
+            final byte[] bytes = out.toByteArray();
             final String resourceDesc = "ChecksumBlobStoreFormat.readBlob(blob=\"" + blobName + "\")";
             try (ByteArrayIndexInput indexInput = new ByteArrayIndexInput(resourceDesc, bytes)) {
                 CodecUtil.checksumEntireFile(indexInput);
@@ -113,7 +121,7 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
 
     /**
      * Writes blob in atomic manner with resolving the blob name using {@link #blobName} and {@link #tempBlobName} methods.
-     * <p/>
+     * <p>
      * The blob will be compressed and checksum will be written if required.
      *
      * Atomic move might be very inefficient on some repositories. It also cannot override existing files.
@@ -121,7 +129,6 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
      * @param obj           object to be serialized
      * @param blobContainer blob container
      * @param name          blob name
-     * @throws IOException
      */
     public void writeAtomic(T obj, BlobContainer blobContainer, String name) throws IOException {
         String blobName = blobName(name);
@@ -138,13 +145,12 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
 
     /**
      * Writes blob with resolving the blob name using {@link #blobName} method.
-     * <p/>
+     * <p>
      * The blob will be compressed and checksum will be written if required.
      *
      * @param obj           object to be serialized
      * @param blobContainer blob container
      * @param name          blob name
-     * @throws IOException
      */
     public void write(T obj, BlobContainer blobContainer, String name) throws IOException {
         String blobName = blobName(name);
@@ -153,19 +159,18 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
 
     /**
      * Writes blob in atomic manner without resolving the blobName using using {@link #blobName} method.
-     * <p/>
+     * <p>
      * The blob will be compressed and checksum will be written if required.
      *
      * @param obj           object to be serialized
      * @param blobContainer blob container
      * @param blobName          blob name
-     * @throws IOException
      */
     protected void writeBlob(T obj, BlobContainer blobContainer, String blobName) throws IOException {
         BytesReference bytes = write(obj);
-        try (OutputStream outputStream = blobContainer.createOutput(blobName)) {
+        try (ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream()) {
             final String resourceDesc = "ChecksumBlobStoreFormat.writeBlob(blob=\"" + blobName + "\")";
-            try (OutputStreamIndexOutput indexOutput = new OutputStreamIndexOutput(resourceDesc, outputStream, BUFFER_SIZE)) {
+            try (OutputStreamIndexOutput indexOutput = new OutputStreamIndexOutput(resourceDesc, blobName, byteArrayOutputStream, BUFFER_SIZE)) {
                 CodecUtil.writeHeader(indexOutput, codec, VERSION);
                 try (OutputStream indexOutputOutputStream = new IndexOutputOutputStream(indexOutput) {
                     @Override
@@ -176,6 +181,10 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
                     bytes.writeTo(indexOutputOutputStream);
                 }
                 CodecUtil.writeFooter(indexOutput);
+            }
+            BytesArray bytesArray = new BytesArray(byteArrayOutputStream.toByteArray());
+            try (InputStream stream = bytesArray.streamInput()) {
+                blobContainer.writeBlob(blobName, stream, bytesArray.length());
             }
         }
     }
@@ -192,7 +201,7 @@ public class ChecksumBlobStoreFormat<T extends ToXContent> extends BlobStoreForm
     protected BytesReference write(T obj) throws IOException {
         try (BytesStreamOutput bytesStreamOutput = new BytesStreamOutput()) {
             if (compress) {
-                try (StreamOutput compressedStreamOutput = CompressorFactory.defaultCompressor().streamOutput(bytesStreamOutput)) {
+                try (StreamOutput compressedStreamOutput = CompressorFactory.COMPRESSOR.streamOutput(bytesStreamOutput)) {
                     write(obj, compressedStreamOutput);
                 }
             } else {

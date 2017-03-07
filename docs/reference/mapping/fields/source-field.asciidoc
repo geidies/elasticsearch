@@ -15,15 +15,16 @@ within the index. For this reason, it can be disabled as follows:
 --------------------------------------------------
 PUT tweets
 {
-  "mappings": {},
-  "tweet": {
-    "_source": {
-      "enabled": false
+  "mappings": {
+    "tweet": {
+      "_source": {
+        "enabled": false
+      }
     }
   }
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 
 [WARNING]
 .Think before disabling the `_source` field
@@ -33,7 +34,8 @@ Users often disable the `_source` field without thinking about the
 consequences, and then live to regret it.  If the `_source` field isn't
 available then a number of features are not supported:
 
-* The <<docs-update,`update` API>>.
+* The <<docs-update,`update`>>, <<docs-update-by-query,`update_by_query`>>,
+and <<docs-reindex,`reindex`>> APIs.
 
 * On the fly <<search-request-highlighting,highlighting>>.
 
@@ -78,8 +80,7 @@ stored.
 WARNING: Removing fields from the `_source` has similar downsides to disabling
 `_source`, especially the fact that you cannot reindex documents from one
 Elasticsearch index to another. Consider using
-<<search-request-source-filtering,source filtering>> or a
-<<mapping-transform,transform script>> instead.
+<<search-request-source-filtering,source filtering>> instead.
 
 The `includes`/`excludes` parameters (which also accept wildcards) can be used
 as follows:
@@ -129,8 +130,7 @@ GET logs/event/_search
   }
 }
 --------------------------------------------------
-// AUTOSENSE
+// CONSOLE
 
 <1> These fields will be removed from the stored `_source` field.
 <2> We can still search on this field, even though it is not in the stored `_source`.
-

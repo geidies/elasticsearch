@@ -19,17 +19,16 @@
 
 package org.elasticsearch.script;
 
-import com.google.common.collect.ImmutableMap;
-
 import org.apache.lucene.index.LeafReaderContext;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.component.AbstractComponent;
-import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.search.lookup.SearchLookup;
 
 import java.io.IOException;
 import java.util.Map;
+
+import static java.util.Collections.unmodifiableMap;
 
 /**
  * A native script engine service.
@@ -38,36 +37,30 @@ public class NativeScriptEngineService extends AbstractComponent implements Scri
 
     public static final String NAME = "native";
 
-    private final ImmutableMap<String, NativeScriptFactory> scripts;
+    private final Map<String, NativeScriptFactory> scripts;
 
-    @Inject
     public NativeScriptEngineService(Settings settings, Map<String, NativeScriptFactory> scripts) {
         super(settings);
-        this.scripts = ImmutableMap.copyOf(scripts);
+        this.scripts = unmodifiableMap(scripts);
     }
 
     @Override
-    public String[] types() {
-        return new String[]{NAME};
+    public String getType() {
+        return NAME;
     }
 
     @Override
-    public String[] extensions() {
-        return new String[0];
+    public String getExtension() {
+        return ""; // Native scripts have no extensions
     }
 
     @Override
-    public boolean sandboxed() {
-        return false;
-    }
-
-    @Override
-    public Object compile(String script) {
-        NativeScriptFactory scriptFactory = scripts.get(script);
+    public Object compile(String scriptName, String scriptSource, Map<String, String> params) {
+        NativeScriptFactory scriptFactory = scripts.get(scriptSource);
         if (scriptFactory != null) {
             return scriptFactory;
         }
-        throw new IllegalArgumentException("Native script [" + script + "] not found");
+        throw new IllegalArgumentException("Native script [" + scriptSource + "] not found");
     }
 
     @Override
@@ -79,24 +72,18 @@ public class NativeScriptEngineService extends AbstractComponent implements Scri
     @Override
     public SearchScript search(CompiledScript compiledScript, final SearchLookup lookup, @Nullable final Map<String, Object> vars) {
         final NativeScriptFactory scriptFactory = (NativeScriptFactory) compiledScript.compiled();
+        final AbstractSearchScript script = (AbstractSearchScript) scriptFactory.newScript(vars);
         return new SearchScript() {
             @Override
             public LeafSearchScript getLeafSearchScript(LeafReaderContext context) throws IOException {
-                AbstractSearchScript script = (AbstractSearchScript) scriptFactory.newScript(vars);
                 script.setLookup(lookup.getLeafSearchLookup(context));
                 return script;
             }
+            @Override
+            public boolean needsScores() {
+                return scriptFactory.needsScores();
+            }
         };
-    }
-
-    @Override
-    public Object execute(CompiledScript compiledScript, Map<String, Object> vars) {
-        return executable(compiledScript, vars).run();
-    }
-
-    @Override
-    public Object unwrap(Object value) {
-        return value;
     }
 
     @Override
@@ -104,7 +91,7 @@ public class NativeScriptEngineService extends AbstractComponent implements Scri
     }
 
     @Override
-    public void scriptRemoved(CompiledScript script) {
-        // Nothing to do here
+    public boolean isInlineScriptEnabled() {
+        return true;
     }
 }

@@ -6,6 +6,10 @@
       "path": "/_cat/plugins",
       "paths": ["/_cat/plugins"],
       "params": {
+        "format": {
+          "type" : "string",
+          "description" : "a short version of the Accept header, e.g. json, yaml"
+        },
         "local": {
           "type" : "boolean",
           "description" : "Return local information, do not retrieve the state from master node (default: false)"
@@ -23,10 +27,14 @@
           "description": "Return help information",
           "default": false
         },
+        "s": {
+          "type": "list",
+          "description" : "Comma-separated list of column names or column aliases to sort by"
+        },
         "v": {
           "type": "boolean",
           "description": "Verbose mode. Display column headers",
-          "default": true
+          "default": false
         }
       }
     },

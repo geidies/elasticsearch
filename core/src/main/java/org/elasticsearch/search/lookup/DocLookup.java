@@ -23,9 +23,6 @@ import org.elasticsearch.common.Nullable;
 import org.elasticsearch.index.fielddata.IndexFieldDataService;
 import org.elasticsearch.index.mapper.MapperService;
 
-/**
- *
- */
 public class DocLookup {
 
     private final MapperService mapperService;
@@ -50,5 +47,9 @@ public class DocLookup {
 
     public LeafDocLookup getLeafDocLookup(LeafReaderContext context) {
         return new LeafDocLookup(mapperService, fieldDataService, types, context);
+    }
+
+    public String[] getTypes() {
+        return types;
     }
 }

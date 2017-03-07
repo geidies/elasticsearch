@@ -25,15 +25,13 @@ import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static com.google.common.collect.Lists.newArrayList;
 import static org.elasticsearch.action.ValidateActions.addValidationError;
 
-/**
- */
-public class ClearScrollRequest extends ActionRequest<ClearScrollRequest> {
+public class ClearScrollRequest extends ActionRequest {
 
     private List<String> scrollIds;
 
@@ -47,7 +45,7 @@ public class ClearScrollRequest extends ActionRequest<ClearScrollRequest> {
 
     public void addScrollId(String scrollId) {
         if (scrollIds == null) {
-            scrollIds = newArrayList();
+            scrollIds = new ArrayList<>();
         }
         scrollIds.add(scrollId);
     }

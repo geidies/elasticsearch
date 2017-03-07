@@ -26,7 +26,7 @@ import org.elasticsearch.common.util.BigArrays;
 /**
  * An bytes stream output that allows providing a {@link BigArrays} instance
  * expecting it to require releasing its content ({@link #bytes()}) once done.
- * <p/>
+ * <p>
  * Please note, its is the responsibility of the caller to make sure the bytes
  * reference do not "escape" and are released only once.
  */
@@ -36,12 +36,13 @@ public class ReleasableBytesStreamOutput extends BytesStreamOutput implements Re
         super(BigArrays.PAGE_SIZE_IN_BYTES, bigarrays);
     }
 
-    public ReleasableBytesStreamOutput(int expectedSize, BigArrays bigarrays) {
-        super(expectedSize, bigarrays);
+    public ReleasableBytesStreamOutput(int expectedSize, BigArrays bigArrays) {
+        super(expectedSize, bigArrays);
     }
 
     @Override
     public ReleasablePagedBytesReference bytes() {
-        return new ReleasablePagedBytesReference(bigarrays, bytes, count);
+        return new ReleasablePagedBytesReference(bigArrays, bytes, count);
     }
+
 }

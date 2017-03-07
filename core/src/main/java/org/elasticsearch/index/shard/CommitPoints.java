@@ -19,25 +19,24 @@
 
 package org.elasticsearch.index.shard;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.apache.lucene.util.CollectionUtil;
+import org.elasticsearch.common.bytes.BytesReference;
+import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.common.xcontent.XContentType;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
-/**
- *
- */
 public class CommitPoints implements Iterable<CommitPoint> {
 
-    private final ImmutableList<CommitPoint> commitPoints;
+    private final List<CommitPoint> commitPoints;
 
     public CommitPoints(List<CommitPoint> commitPoints) {
         CollectionUtil.introSort(commitPoints, new Comparator<CommitPoint>() {
@@ -46,7 +45,7 @@ public class CommitPoints implements Iterable<CommitPoint> {
                 return (o2.version() < o1.version() ? -1 : (o2.version() == o1.version() ? 0 : 1));
             }
         });
-        this.commitPoints = ImmutableList.copyOf(commitPoints);
+        this.commitPoints = Collections.unmodifiableList(new ArrayList<>(commitPoints));
     }
 
     public List<CommitPoint> commits() {
@@ -116,11 +115,12 @@ public class CommitPoints implements Iterable<CommitPoint> {
         builder.endObject();
 
         builder.endObject();
-        return builder.bytes().toBytes();
+        return BytesReference.toBytes(builder.bytes());
     }
 
     public static CommitPoint fromXContent(byte[] data) throws Exception {
-        try (XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(data)) {
+        // EMPTY is safe here because we never call namedObject
+        try (XContentParser parser = XContentFactory.xContent(XContentType.JSON).createParser(NamedXContentRegistry.EMPTY, data)) {
             String currentFieldName = null;
             XContentParser.Token token = parser.nextToken();
             if (token == null) {
@@ -130,8 +130,8 @@ public class CommitPoints implements Iterable<CommitPoint> {
             long version = -1;
             String name = null;
             CommitPoint.Type type = null;
-            List<CommitPoint.FileInfo> indexFiles = Lists.newArrayList();
-            List<CommitPoint.FileInfo> translogFiles = Lists.newArrayList();
+            List<CommitPoint.FileInfo> indexFiles = new ArrayList<>();
+            List<CommitPoint.FileInfo> translogFiles = new ArrayList<>();
             while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
                 if (token == XContentParser.Token.FIELD_NAME) {
                     currentFieldName = parser.currentName();

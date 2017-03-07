@@ -19,7 +19,6 @@
 
 package org.elasticsearch.search.internal;
 
-import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Streamable;
@@ -28,40 +27,47 @@ import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.Aggregations;
 import org.elasticsearch.search.aggregations.InternalAggregations;
+import org.elasticsearch.search.profile.ProfileShardResult;
+import org.elasticsearch.search.profile.SearchProfileShardResults;
 import org.elasticsearch.search.suggest.Suggest;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Map;
 
-import static org.elasticsearch.search.internal.InternalSearchHits.readSearchHits;
-
-/**
- *
- */
 public class InternalSearchResponse implements Streamable, ToXContent {
 
     public static InternalSearchResponse empty() {
-        return new InternalSearchResponse(InternalSearchHits.empty(), null, null, false, null);
+        return new InternalSearchResponse(SearchHits.empty(), null, null, null, false, null, 1);
     }
 
-    private InternalSearchHits hits;
+    private SearchHits hits;
 
     private InternalAggregations aggregations;
 
     private Suggest suggest;
 
+    private SearchProfileShardResults profileResults;
+
     private boolean timedOut;
 
     private Boolean terminatedEarly = null;
 
+    private int numReducePhases = 1;
+
     private InternalSearchResponse() {
     }
 
-    public InternalSearchResponse(InternalSearchHits hits, InternalAggregations aggregations, Suggest suggest, boolean timedOut, Boolean terminatedEarly) {
+    public InternalSearchResponse(SearchHits hits, InternalAggregations aggregations, Suggest suggest,
+                                  SearchProfileShardResults profileResults, boolean timedOut, Boolean terminatedEarly,
+                                  int numReducePhases) {
         this.hits = hits;
         this.aggregations = aggregations;
         this.suggest = suggest;
+        this.profileResults = profileResults;
         this.timedOut = timedOut;
         this.terminatedEarly = terminatedEarly;
+        this.numReducePhases = numReducePhases;
     }
 
     public boolean timedOut() {
@@ -84,6 +90,26 @@ public class InternalSearchResponse implements Streamable, ToXContent {
         return suggest;
     }
 
+    /**
+     * Returns the number of reduce phases applied to obtain this search response
+     */
+    public int getNumReducePhases() {
+        return numReducePhases;
+    }
+
+    /**
+     * Returns the profile results for this search response (including all shards).
+     * An empty map is returned if profiling was not enabled
+     *
+     * @return Profile results
+     */
+    public Map<String, ProfileShardResult> profile() {
+        if (profileResults == null) {
+            return Collections.emptyMap();
+        }
+        return profileResults.getShardResults();
+    }
+
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         hits.toXContent(builder, params);
@@ -92,6 +118,9 @@ public class InternalSearchResponse implements Streamable, ToXContent {
         }
         if (suggest != null) {
             suggest.toXContent(builder, params);
+        }
+        if (profileResults != null) {
+            profileResults.toXContent(builder, params);
         }
         return builder;
     }
@@ -104,16 +133,17 @@ public class InternalSearchResponse implements Streamable, ToXContent {
 
     @Override
     public void readFrom(StreamInput in) throws IOException {
-        hits = readSearchHits(in);
+        hits = SearchHits.readSearchHits(in);
         if (in.readBoolean()) {
             aggregations = InternalAggregations.readAggregations(in);
         }
         if (in.readBoolean()) {
-            suggest = Suggest.readSuggest(Suggest.Fields.SUGGEST, in);
+            suggest = Suggest.readSuggest(in);
         }
         timedOut = in.readBoolean();
-
         terminatedEarly = in.readOptionalBoolean();
+        profileResults = in.readOptionalWriteable(SearchProfileShardResults::new);
+        numReducePhases = in.readVInt();
     }
 
     @Override
@@ -132,7 +162,8 @@ public class InternalSearchResponse implements Streamable, ToXContent {
             suggest.writeTo(out);
         }
         out.writeBoolean(timedOut);
-
         out.writeOptionalBoolean(terminatedEarly);
+        out.writeOptionalWriteable(profileResults);
+        out.writeVInt(numReducePhases);
     }
 }

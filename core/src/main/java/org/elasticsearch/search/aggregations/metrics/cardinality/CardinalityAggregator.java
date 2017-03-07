@@ -20,7 +20,6 @@
 package org.elasticsearch.search.aggregations.metrics.cardinality;
 
 import com.carrotsearch.hppc.BitMixer;
-import com.google.common.base.Preconditions;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.RandomAccessOrds;
@@ -42,9 +41,8 @@ import org.elasticsearch.search.aggregations.InternalAggregation;
 import org.elasticsearch.search.aggregations.LeafBucketCollector;
 import org.elasticsearch.search.aggregations.metrics.NumericMetricsAggregator;
 import org.elasticsearch.search.aggregations.pipeline.PipelineAggregator;
-import org.elasticsearch.search.aggregations.support.AggregationContext;
 import org.elasticsearch.search.aggregations.support.ValuesSource;
-import org.elasticsearch.search.aggregations.support.format.ValueFormatter;
+import org.elasticsearch.search.internal.SearchContext;
 
 import java.io.IOException;
 import java.util.List;
@@ -56,7 +54,6 @@ import java.util.Map;
 public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue {
 
     private final int precision;
-    private final boolean rehash;
     private final ValuesSource valuesSource;
 
     // Expensive to initialize, so we only initialize it when we have an actual value source
@@ -64,16 +61,13 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
     private HyperLogLogPlusPlus counts;
 
     private Collector collector;
-    private ValueFormatter formatter;
 
-    public CardinalityAggregator(String name, ValuesSource valuesSource, boolean rehash, int precision, ValueFormatter formatter,
-            AggregationContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
+    public CardinalityAggregator(String name, ValuesSource valuesSource, int precision,
+            SearchContext context, Aggregator parent, List<PipelineAggregator> pipelineAggregators, Map<String, Object> metaData) throws IOException {
         super(name, context, parent, pipelineAggregators, metaData);
         this.valuesSource = valuesSource;
-        this.rehash = rehash;
         this.precision = precision;
         this.counts = valuesSource == null ? null : new HyperLogLogPlusPlus(precision, context.bigArrays(), 1);
-        this.formatter = formatter;
     }
 
     @Override
@@ -84,13 +78,6 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
     private Collector pickCollector(LeafReaderContext ctx) throws IOException {
         if (valuesSource == null) {
             return new EmptyCollector();
-        }
-        // if rehash is false then the value source is either already hashed, or the user explicitly
-        // requested not to hash the values (perhaps they already hashed the values themselves before indexing the doc)
-        // so we can just work with the original value source as is
-        if (!rehash) {
-            MurmurHash3Values hashValues = MurmurHash3Values.cast(((ValuesSource.Numeric) valuesSource).longValues(ctx));
-            return new DirectCollector(counts, hashValues);
         }
 
         if (valuesSource instanceof ValuesSource.Numeric) {
@@ -157,12 +144,12 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
         // this Aggregator (and its HLL++ counters) is released.
         HyperLogLogPlusPlus copy = new HyperLogLogPlusPlus(precision, BigArrays.NON_RECYCLING_INSTANCE, 1);
         copy.merge(0, counts, owningBucketOrdinal);
-        return new InternalCardinality(name, copy, formatter, pipelineAggregators(), metaData());
+        return new InternalCardinality(name, copy, pipelineAggregators(), metaData());
     }
 
     @Override
     public InternalAggregation buildEmptyAggregation() {
-        return new InternalCardinality(name, null, formatter, pipelineAggregators(), metaData());
+        return new InternalCardinality(name, null, pipelineAggregators(), metaData());
     }
 
     @Override
@@ -170,7 +157,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
         Releasables.close(counts, collector);
     }
 
-    private static abstract class Collector extends LeafBucketCollector implements Releasable {
+    private abstract static class Collector extends LeafBucketCollector implements Releasable {
 
         public abstract void postCollect();
 
@@ -243,7 +230,9 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
         private ObjectArray<FixedBitSet> visitedOrds;
 
         OrdinalsCollector(HyperLogLogPlusPlus counts, RandomAccessOrds values, BigArrays bigArrays) {
-            Preconditions.checkArgument(values.getValueCount() <= Integer.MAX_VALUE);
+            if (values.getValueCount() > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException();
+            }
             maxOrd = (int) values.getValueCount();
             this.bigArrays = bigArrays;
             this.counts = counts;
@@ -305,33 +294,13 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
     /**
      * Representation of a list of hash values. There might be dups and there is no guarantee on the order.
      */
-    static abstract class MurmurHash3Values {
+    abstract static class MurmurHash3Values {
 
         public abstract void setDocument(int docId);
 
         public abstract int count();
 
         public abstract long valueAt(int index);
-
-        /**
-         * Return a {@link MurmurHash3Values} instance that returns each value as its hash.
-         */
-        public static MurmurHash3Values cast(final SortedNumericDocValues values) {
-            return new MurmurHash3Values() {
-                @Override
-                public void setDocument(int docId) {
-                    values.setDocument(docId);
-                }
-                @Override
-                public int count() {
-                    return values.count();
-                }
-                @Override
-                public long valueAt(int index) {
-                    return values.valueAt(index);
-                }
-            };
-        }
 
         /**
          * Return a {@link MurmurHash3Values} instance that computes hashes on the fly for each double value.
@@ -358,7 +327,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
 
             private final SortedNumericDocValues values;
 
-            public Long(SortedNumericDocValues values) {
+            Long(SortedNumericDocValues values) {
                 this.values = values;
             }
 
@@ -382,7 +351,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
 
             private final SortedNumericDoubleValues values;
 
-            public Double(SortedNumericDoubleValues values) {
+            Double(SortedNumericDoubleValues values) {
                 this.values = values;
             }
 
@@ -408,7 +377,7 @@ public class CardinalityAggregator extends NumericMetricsAggregator.SingleValue 
 
             private final SortedBinaryDocValues values;
 
-            public Bytes(SortedBinaryDocValues values) {
+            Bytes(SortedBinaryDocValues values) {
                 this.values = values;
             }
 

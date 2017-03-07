@@ -38,9 +38,9 @@
           "type": "boolean",
           "description": "Return local information, do not retrieve the state from master node (default: false)"
         },
-        "human": {
+        "include_defaults": {
           "type": "boolean",
-          "description": "Whether to return version and creation date values in human-readable format.",
+          "description": "Whether to return all default setting for each of the indices.",
           "default": false
         }
       }

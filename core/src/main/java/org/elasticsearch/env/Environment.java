@@ -22,6 +22,8 @@ package org.elasticsearch.env;
 import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.common.SuppressForbidden;
 import org.elasticsearch.common.io.PathUtils;
+import org.elasticsearch.common.settings.Setting;
+import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.settings.Settings;
 
 import java.io.IOException;
@@ -32,6 +34,10 @@ import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 
 import static org.elasticsearch.common.Strings.cleanPath;
 
@@ -39,13 +45,21 @@ import static org.elasticsearch.common.Strings.cleanPath;
  * The environment of where things exists.
  */
 @SuppressForbidden(reason = "configures paths for the system")
-// TODO: move PathUtils to be package-private here instead of 
+// TODO: move PathUtils to be package-private here instead of
 // public+forbidden api!
 public class Environment {
+    public static final Setting<String> PATH_HOME_SETTING = Setting.simpleString("path.home", Property.NodeScope);
+    public static final Setting<String> PATH_CONF_SETTING = Setting.simpleString("path.conf", Property.NodeScope);
+    public static final Setting<String> PATH_SCRIPTS_SETTING = Setting.simpleString("path.scripts", Property.NodeScope);
+    public static final Setting<List<String>> PATH_DATA_SETTING =
+        Setting.listSetting("path.data", Collections.emptyList(), Function.identity(), Property.NodeScope);
+    public static final Setting<String> PATH_LOGS_SETTING = Setting.simpleString("path.logs", Property.NodeScope);
+    public static final Setting<List<String>> PATH_REPO_SETTING =
+        Setting.listSetting("path.repo", Collections.emptyList(), Function.identity(), Property.NodeScope);
+    public static final Setting<String> PATH_SHARED_DATA_SETTING = Setting.simpleString("path.shared_data", Property.NodeScope);
+    public static final Setting<String> PIDFILE_SETTING = Setting.simpleString("pidfile", Property.NodeScope);
 
     private final Settings settings;
-
-    private final Path homeFile;
 
     private final Path[] dataFiles;
 
@@ -55,13 +69,25 @@ public class Environment {
 
     private final Path configFile;
 
+    private final Path scriptsFile;
+
     private final Path pluginsFile;
+
+    private final Path modulesFile;
+
+    private final Path sharedDataFile;
+
+    /** location of bin/, used by plugin manager */
+    private final Path binFile;
+
+    /** location of lib/, */
+    private final Path libFile;
 
     private final Path logsFile;
 
     /** Path to the PID file (can be null if no PID file is configured) **/
     private final Path pidFile;
-    
+
     /** Path to the temporary file directory used by the JDK */
     private final Path tmpFile = PathUtils.get(System.getProperty("java.io.tmpdir"));
 
@@ -82,57 +108,76 @@ public class Environment {
     }
 
     public Environment(Settings settings) {
-        this.settings = settings;
-        if (settings.get("path.home") != null) {
-            homeFile = PathUtils.get(cleanPath(settings.get("path.home")));
+        final Path homeFile;
+        if (PATH_HOME_SETTING.exists(settings)) {
+            homeFile = PathUtils.get(cleanPath(PATH_HOME_SETTING.get(settings)));
         } else {
-            throw new IllegalStateException("path.home is not configured");
+            throw new IllegalStateException(PATH_HOME_SETTING.getKey() + " is not configured");
         }
 
-        if (settings.get("path.conf") != null) {
-            configFile = PathUtils.get(cleanPath(settings.get("path.conf")));
+        if (PATH_CONF_SETTING.exists(settings)) {
+            configFile = PathUtils.get(cleanPath(PATH_CONF_SETTING.get(settings)));
         } else {
             configFile = homeFile.resolve("config");
         }
 
-        if (settings.get("path.plugins") != null) {
-            pluginsFile = PathUtils.get(cleanPath(settings.get("path.plugins")));
+        if (PATH_SCRIPTS_SETTING.exists(settings)) {
+            scriptsFile = PathUtils.get(cleanPath(PATH_SCRIPTS_SETTING.get(settings)));
         } else {
-            pluginsFile = homeFile.resolve("plugins");
+            scriptsFile = configFile.resolve("scripts");
         }
 
-        String[] dataPaths = settings.getAsArray("path.data");
-        if (dataPaths.length > 0) {
-            dataFiles = new Path[dataPaths.length];
-            dataWithClusterFiles = new Path[dataPaths.length];
-            for (int i = 0; i < dataPaths.length; i++) {
-                dataFiles[i] = PathUtils.get(dataPaths[i]);
-                dataWithClusterFiles[i] = dataFiles[i].resolve(ClusterName.clusterNameFromSettings(settings).value());
+        pluginsFile = homeFile.resolve("plugins");
+
+        List<String> dataPaths = PATH_DATA_SETTING.get(settings);
+        final ClusterName clusterName = ClusterName.CLUSTER_NAME_SETTING.get(settings);
+        if (dataPaths.isEmpty() == false) {
+            dataFiles = new Path[dataPaths.size()];
+            dataWithClusterFiles = new Path[dataPaths.size()];
+            for (int i = 0; i < dataPaths.size(); i++) {
+                dataFiles[i] = PathUtils.get(dataPaths.get(i));
+                dataWithClusterFiles[i] = dataFiles[i].resolve(clusterName.value());
             }
         } else {
             dataFiles = new Path[]{homeFile.resolve("data")};
-            dataWithClusterFiles = new Path[]{homeFile.resolve("data").resolve(ClusterName.clusterNameFromSettings(settings).value())};
+            dataWithClusterFiles = new Path[]{homeFile.resolve("data").resolve(clusterName.value())};
         }
-        String[] repoPaths = settings.getAsArray("path.repo");
-        if (repoPaths.length > 0) {
-            repoFiles = new Path[repoPaths.length];
-            for (int i = 0; i < repoPaths.length; i++) {
-                repoFiles[i] = PathUtils.get(repoPaths[i]);
+        if (PATH_SHARED_DATA_SETTING.exists(settings)) {
+            sharedDataFile = PathUtils.get(cleanPath(PATH_SHARED_DATA_SETTING.get(settings)));
+        } else {
+            sharedDataFile = null;
+        }
+        List<String> repoPaths = PATH_REPO_SETTING.get(settings);
+        if (repoPaths.isEmpty() == false) {
+            repoFiles = new Path[repoPaths.size()];
+            for (int i = 0; i < repoPaths.size(); i++) {
+                repoFiles[i] = PathUtils.get(repoPaths.get(i));
             }
         } else {
             repoFiles = new Path[0];
         }
-        if (settings.get("path.logs") != null) {
-            logsFile = PathUtils.get(cleanPath(settings.get("path.logs")));
+        if (PATH_LOGS_SETTING.exists(settings)) {
+            logsFile = PathUtils.get(cleanPath(PATH_LOGS_SETTING.get(settings)));
         } else {
             logsFile = homeFile.resolve("logs");
         }
 
-        if (settings.get("pidfile") != null) {
-            pidFile = PathUtils.get(cleanPath(settings.get("pidfile")));
+        if (PIDFILE_SETTING.exists(settings)) {
+            pidFile = PathUtils.get(cleanPath(PIDFILE_SETTING.get(settings)));
         } else {
             pidFile = null;
         }
+
+        binFile = homeFile.resolve("bin");
+        libFile = homeFile.resolve("lib");
+        modulesFile = homeFile.resolve("modules");
+
+        Settings.Builder finalSettings = Settings.builder().put(settings);
+        finalSettings.put(PATH_HOME_SETTING.getKey(), homeFile);
+        finalSettings.putArray(PATH_DATA_SETTING.getKey(), dataPaths);
+        finalSettings.put(PATH_LOGS_SETTING.getKey(), logsFile);
+        this.settings = finalSettings.build();
+
     }
 
     /**
@@ -143,13 +188,6 @@ public class Environment {
     }
 
     /**
-     * The home of the installation.
-     */
-    public Path homeFile() {
-        return homeFile;
-    }
-
-    /**
      * The data location.
      */
     public Path[] dataFiles() {
@@ -157,8 +195,19 @@ public class Environment {
     }
 
     /**
-     * The data location with the cluster name as a sub directory.
+     * The shared data location
      */
+    public Path sharedDataFile() {
+        return sharedDataFile;
+    }
+
+    /**
+     * The data location with the cluster name as a sub directory.
+     *
+     * @deprecated Used to upgrade old data paths to new ones that do not include the cluster name, should not be used to write files to and
+     * will be removed in ES 6.0
+     */
+    @Deprecated
     public Path[] dataWithClusterFiles() {
         return dataWithClusterFiles;
     }
@@ -232,8 +281,27 @@ public class Environment {
         return configFile;
     }
 
+    /**
+     * Location of on-disk scripts
+     */
+    public Path scriptsFile() {
+        return scriptsFile;
+    }
+
     public Path pluginsFile() {
         return pluginsFile;
+    }
+
+    public Path binFile() {
+        return binFile;
+    }
+
+    public Path libFile() {
+        return libFile;
+    }
+
+    public Path modulesFile() {
+        return modulesFile;
     }
 
     public Path logsFile() {
@@ -246,7 +314,7 @@ public class Environment {
     public Path pidFile() {
         return pidFile;
     }
-    
+
     /** Path to the default temp directory used by the JDK */
     public Path tmpFile() {
         return tmpFile;
@@ -264,34 +332,33 @@ public class Environment {
      *   <li>Only requires the security permissions of {@link Files#getFileStore(Path)},
      *       no permissions to the actual mount point are required.
      *   <li>Exception handling has the same semantics as {@link Files#getFileStore(Path)}.
+     *   <li>Works around https://bugs.openjdk.java.net/browse/JDK-8034057.
+     *   <li>Gives a better exception when filestore cannot be retrieved from inside a FreeBSD jail.
      * </ul>
      */
-    public FileStore getFileStore(Path path) throws IOException {
+    public static FileStore getFileStore(Path path) throws IOException {
         return ESFileStore.getMatchingFileStore(path, fileStores);
     }
 
-    public URL resolveConfig(String path) throws FailedToResolveConfigException {
-        // first, try it as a path in the config directory
-        Path f = configFile.resolve(path);
-        if (Files.exists(f)) {
-            try {
-                return f.toUri().toURL();
-            } catch (MalformedURLException e) {
-                throw new FailedToResolveConfigException("Failed to resolve path [" + f + "]", e);
-            }
-        }
-        // try and load it from the classpath directly
-        URL resource = settings.getClassLoader().getResource(path);
-        if (resource != null) {
-            return resource;
-        }
-        // try and load it from the classpath with config/ prefix
-        if (!path.startsWith("config/")) {
-            resource = settings.getClassLoader().getResource("config/" + path);
-            if (resource != null) {
-                return resource;
-            }
-        }
-        throw new FailedToResolveConfigException("Failed to resolve config path [" + path + "], tried config path [" + f + "] and classpath");
+    /**
+     * asserts that the two environments are equivalent for all things the environment cares about (i.e., all but the setting
+     * object which may contain different setting)
+     */
+    public static void assertEquivalent(Environment actual, Environment expected) {
+        assertEquals(actual.dataWithClusterFiles(), expected.dataWithClusterFiles(), "dataWithClusterFiles");
+        assertEquals(actual.repoFiles(), expected.repoFiles(), "repoFiles");
+        assertEquals(actual.configFile(), expected.configFile(), "configFile");
+        assertEquals(actual.scriptsFile(), expected.scriptsFile(), "scriptsFile");
+        assertEquals(actual.pluginsFile(), expected.pluginsFile(), "pluginsFile");
+        assertEquals(actual.binFile(), expected.binFile(), "binFile");
+        assertEquals(actual.libFile(), expected.libFile(), "libFile");
+        assertEquals(actual.modulesFile(), expected.modulesFile(), "modulesFile");
+        assertEquals(actual.logsFile(), expected.logsFile(), "logsFile");
+        assertEquals(actual.pidFile(), expected.pidFile(), "pidFile");
+        assertEquals(actual.tmpFile(), expected.tmpFile(), "tmpFile");
+    }
+
+    private static void assertEquals(Object actual, Object expected, String name) {
+        assert Objects.deepEquals(actual, expected) : "actual " + name + " [" + actual + "] is different than [ " + expected + "]";
     }
 }

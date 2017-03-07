@@ -28,14 +28,12 @@ import org.elasticsearch.common.io.stream.StreamOutput;
 
 import java.io.IOException;
 
-/**
- */
 public class GetAliasesRequest extends MasterNodeReadRequest<GetAliasesRequest> implements AliasesRequest {
 
     private String[] indices = Strings.EMPTY_ARRAY;
     private String[] aliases = Strings.EMPTY_ARRAY;
 
-    private IndicesOptions indicesOptions = IndicesOptions.strictExpandOpen();
+    private IndicesOptions indicesOptions = IndicesOptions.strictExpand();
 
     public GetAliasesRequest(String[] aliases) {
         this.aliases = aliases;

@@ -18,28 +18,22 @@
  */
 package org.elasticsearch.index.shard;
 
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.join.BitDocIdSetFilter;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.ElasticsearchException;
-import org.elasticsearch.Version;
-import org.elasticsearch.common.Nullable;
-import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
-import org.elasticsearch.common.lucene.search.Queries;
-import org.elasticsearch.common.xcontent.XContentHelper;
-import org.elasticsearch.common.xcontent.XContentParser;
-import org.elasticsearch.index.aliases.IndexAliasesService;
-import org.elasticsearch.index.cache.IndexCache;
+import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.index.VersionType;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.engine.IgnoreOnRecoveryEngineException;
-import org.elasticsearch.index.mapper.*;
-import org.elasticsearch.index.query.IndexQueryParserService;
-import org.elasticsearch.index.query.ParsedQuery;
-import org.elasticsearch.index.query.QueryParsingException;
+import org.elasticsearch.index.mapper.DocumentMapperForType;
+import org.elasticsearch.index.mapper.MapperException;
+import org.elasticsearch.index.mapper.MapperService;
+import org.elasticsearch.index.mapper.Mapping;
+import org.elasticsearch.index.mapper.Uid;
+import org.elasticsearch.index.seqno.SequenceNumbersService;
 import org.elasticsearch.index.translog.Translog;
+import org.elasticsearch.rest.RestStatus;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -53,21 +47,17 @@ import static org.elasticsearch.index.mapper.SourceToParse.source;
  */
 public class TranslogRecoveryPerformer {
     private final MapperService mapperService;
-    private final IndexQueryParserService queryParserService;
-    private final IndexAliasesService indexAliasesService;
-    private final IndexCache indexCache;
+    private final Logger logger;
     private final Map<String, Mapping> recoveredTypes = new HashMap<>();
     private final ShardId shardId;
 
-    protected TranslogRecoveryPerformer(ShardId shardId, MapperService mapperService, IndexQueryParserService queryParserService, IndexAliasesService indexAliasesService, IndexCache indexCache) {
+    protected TranslogRecoveryPerformer(ShardId shardId, MapperService mapperService, Logger logger) {
         this.shardId = shardId;
         this.mapperService = mapperService;
-        this.queryParserService = queryParserService;
-        this.indexAliasesService = indexAliasesService;
-        this.indexCache = indexCache;
+        this.logger = logger;
     }
 
-    protected Tuple<DocumentMapper, Mapping> docMapper(String type) {
+    protected DocumentMapperForType docMapper(String type) {
         return mapperService.documentMapperWithAutoCreate(type); // protected for testing
     }
 
@@ -81,13 +71,34 @@ public class TranslogRecoveryPerformer {
         int numOps = 0;
         try {
             for (Translog.Operation operation : operations) {
-                performRecoveryOperation(engine, operation, false);
+                performRecoveryOperation(engine, operation, false, Engine.Operation.Origin.PEER_RECOVERY);
                 numOps++;
             }
-        } catch (Throwable t) {
-            throw new BatchOperationException(shardId, "failed to apply batch translog operation [" + t.getMessage() + "]", numOps, t);
+            engine.getTranslog().sync();
+        } catch (Exception e) {
+            throw new BatchOperationException(shardId, "failed to apply batch translog operation", numOps, e);
         }
         return numOps;
+    }
+
+    public int recoveryFromSnapshot(Engine engine, Translog.Snapshot snapshot) throws IOException {
+        Translog.Operation operation;
+        int opsRecovered = 0;
+        while ((operation = snapshot.next()) != null) {
+            try {
+                performRecoveryOperation(engine, operation, true, Engine.Operation.Origin.LOCAL_TRANSLOG_RECOVERY);
+                opsRecovered++;
+            } catch (ElasticsearchException e) {
+                if (e.status() == RestStatus.BAD_REQUEST) {
+                    // mainly for MapperParsingException and Failure to detect xcontent
+                    logger.info("ignoring recovery of a corrupt translog entry", e);
+                } else {
+                    throw e;
+                }
+            }
+        }
+
+        return opsRecovered;
     }
 
     public static class BatchOperationException extends ElasticsearchException {
@@ -111,7 +122,7 @@ public class TranslogRecoveryPerformer {
             out.writeInt(completedOperations);
         }
 
-        /** the number of succesful operations performed before the exception was thrown */
+        /** the number of successful operations performed before the exception was thrown */
         public int completedOperations() {
             return completedOperations;
         }
@@ -128,7 +139,7 @@ public class TranslogRecoveryPerformer {
         if (currentUpdate == null) {
             recoveredTypes.put(type, update);
         } else {
-            MapperUtils.merge(currentUpdate, update);
+            currentUpdate = currentUpdate.merge(update, false);
         }
     }
 
@@ -139,36 +150,40 @@ public class TranslogRecoveryPerformer {
      *                            cause a {@link MapperException} to be thrown if an update
      *                            is encountered.
      */
-    public void performRecoveryOperation(Engine engine, Translog.Operation operation, boolean allowMappingUpdates) {
+    private void performRecoveryOperation(Engine engine, Translog.Operation operation, boolean allowMappingUpdates, Engine.Operation.Origin origin) throws IOException {
+
         try {
             switch (operation.opType()) {
-                case CREATE:
-                    Translog.Create create = (Translog.Create) operation;
-                    Engine.Create engineCreate = IndexShard.prepareCreate(docMapper(create.type()),
-                            source(create.source()).type(create.type()).id(create.id())
-                                    .routing(create.routing()).parent(create.parent()).timestamp(create.timestamp()).ttl(create.ttl()),
-                            create.version(), create.versionType().versionTypeForReplicationAndRecovery(), Engine.Operation.Origin.RECOVERY, true, false);
-                    maybeAddMappingUpdate(engineCreate.type(), engineCreate.parsedDoc().dynamicMappingsUpdate(), engineCreate.id(), allowMappingUpdates);
-                    engine.create(engineCreate);
-                    break;
-                case SAVE:
+                case INDEX:
                     Translog.Index index = (Translog.Index) operation;
-                    Engine.Index engineIndex = IndexShard.prepareIndex(docMapper(index.type()), source(index.source()).type(index.type()).id(index.id())
-                                    .routing(index.routing()).parent(index.parent()).timestamp(index.timestamp()).ttl(index.ttl()),
-                            index.version(), index.versionType().versionTypeForReplicationAndRecovery(), Engine.Operation.Origin.RECOVERY, true);
+                    // we set canHaveDuplicates to true all the time such that we de-optimze the translog case and ensure that all
+                    // autoGeneratedID docs that are coming from the primary are updated correctly.
+                    Engine.Index engineIndex = IndexShard.prepareIndex(docMapper(index.type()),
+                        source(shardId.getIndexName(), index.type(), index.id(), index.source(), XContentFactory.xContentType(index.source()))
+                            .routing(index.routing()).parent(index.parent()), index.seqNo(), index.primaryTerm(),
+                            index.version(), index.versionType().versionTypeForReplicationAndRecovery(), origin, index.getAutoGeneratedIdTimestamp(), true);
                     maybeAddMappingUpdate(engineIndex.type(), engineIndex.parsedDoc().dynamicMappingsUpdate(), engineIndex.id(), allowMappingUpdates);
-                    engine.index(engineIndex);
+                    logger.trace("[translog] recover [index] op [({}, {})] of [{}][{}]", index.seqNo(), index.primaryTerm(), index.type(), index.id());
+                    index(engine, engineIndex);
                     break;
                 case DELETE:
                     Translog.Delete delete = (Translog.Delete) operation;
                     Uid uid = Uid.createUid(delete.uid().text());
-                    engine.delete(new Engine.Delete(uid.type(), uid.id(), delete.uid(), delete.version(),
-                            delete.versionType().versionTypeForReplicationAndRecovery(), Engine.Operation.Origin.RECOVERY, System.nanoTime(), false));
+                    logger.trace("[translog] recover [delete] op [({}, {})] of [{}][{}]", delete.seqNo(), delete.primaryTerm(), uid.type(), uid.id());
+                    final Engine.Delete engineDelete = new Engine.Delete(uid.type(), uid.id(), delete.uid(), delete.seqNo(),
+                            delete.primaryTerm(), delete.version(), delete.versionType().versionTypeForReplicationAndRecovery(),
+                            origin, System.nanoTime());
+                    delete(engine, engineDelete);
                     break;
-                case DELETE_BY_QUERY:
-                    Translog.DeleteByQuery deleteByQuery = (Translog.DeleteByQuery) operation;
-                    engine.delete(prepareDeleteByQuery(queryParserService, mapperService, indexAliasesService, indexCache,
-                            deleteByQuery.source(), deleteByQuery.filteringAliases(), Engine.Operation.Origin.RECOVERY, deleteByQuery.types()));
+                case NO_OP:
+                    final Translog.NoOp noOp = (Translog.NoOp) operation;
+                    final long seqNo = noOp.seqNo();
+                    final long primaryTerm = noOp.primaryTerm();
+                    final String reason = noOp.reason();
+                    logger.trace("[translog] recover [no_op] op [({}, {})] of [{}]", seqNo, primaryTerm, reason);
+                    final Engine.NoOp engineNoOp =
+                        new Engine.NoOp(null, seqNo, primaryTerm, 0, VersionType.INTERNAL, origin, System.nanoTime(), reason);
+                    noOp(engine, engineNoOp);
                     break;
                 default:
                     throw new IllegalStateException("No operation defined for [" + operation + "]");
@@ -194,37 +209,16 @@ public class TranslogRecoveryPerformer {
         operationProcessed();
     }
 
-    private static Engine.DeleteByQuery prepareDeleteByQuery(IndexQueryParserService queryParserService, MapperService mapperService, IndexAliasesService indexAliasesService, IndexCache indexCache, BytesReference source, @Nullable String[] filteringAliases, Engine.Operation.Origin origin, String... types) {
-        long startTime = System.nanoTime();
-        if (types == null) {
-            types = Strings.EMPTY_ARRAY;
-        }
-        Query query;
-        try {
-            query = queryParserService.parseQuery(source).query();
-        } catch (QueryParsingException ex) {
-            // for BWC we try to parse directly the query since pre 1.0.0.Beta2 we didn't require a top level query field
-            if ( queryParserService.getIndexCreatedVersion().onOrBefore(Version.V_1_0_0_Beta2)) {
-                try {
-                    XContentParser parser = XContentHelper.createParser(source);
-                    ParsedQuery parse = queryParserService.parse(parser);
-                    query = parse.query();
-                } catch (Throwable t) {
-                    ex.addSuppressed(t);
-                    throw ex;
-                }
-            } else {
-                throw ex;
-            }
-        }
-        Query searchFilter = mapperService.searchFilter(types);
-        if (searchFilter != null) {
-            query = Queries.filtered(query, searchFilter);
-        }
+    protected void index(Engine engine, Engine.Index engineIndex) throws IOException {
+        engine.index(engineIndex);
+    }
 
-        Query aliasFilter = indexAliasesService.aliasFilter(filteringAliases);
-        BitDocIdSetFilter parentFilter = mapperService.hasNested() ? indexCache.bitsetFilterCache().getBitDocIdSetFilter(Queries.newNonNestedFilter()) : null;
-        return new Engine.DeleteByQuery(query, source, filteringAliases, aliasFilter, parentFilter, origin, startTime, types);
+    protected void delete(Engine engine, Engine.Delete engineDelete) throws IOException {
+        engine.delete(engineDelete);
+    }
+
+    protected void noOp(Engine engine, Engine.NoOp engineNoOp) {
+        engine.noOp(engineNoOp);
     }
 
     /**
@@ -234,6 +228,7 @@ public class TranslogRecoveryPerformer {
     protected void operationProcessed() {
         // noop
     }
+
 
     /**
      * Returns the recovered types modifying the mapping during the recovery

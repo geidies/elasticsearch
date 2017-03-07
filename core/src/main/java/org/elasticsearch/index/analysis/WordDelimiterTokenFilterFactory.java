@@ -19,24 +19,32 @@
 
 package org.elasticsearch.index.analysis;
 
+import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.miscellaneous.Lucene47WordDelimiterFilter;
 import org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter;
 import org.apache.lucene.analysis.miscellaneous.WordDelimiterIterator;
-import org.apache.lucene.analysis.util.CharArraySet;
-import org.apache.lucene.util.Version;
-import org.elasticsearch.common.inject.Inject;
-import org.elasticsearch.common.inject.assistedinject.Assisted;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.env.Environment;
-import org.elasticsearch.index.Index;
-import org.elasticsearch.index.settings.IndexSettings;
+import org.elasticsearch.index.IndexSettings;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.*;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.CATENATE_ALL;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.CATENATE_NUMBERS;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.CATENATE_WORDS;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.GENERATE_NUMBER_PARTS;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.GENERATE_WORD_PARTS;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.PRESERVE_ORIGINAL;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.SPLIT_ON_CASE_CHANGE;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.SPLIT_ON_NUMERICS;
+import static org.apache.lucene.analysis.miscellaneous.WordDelimiterFilter.STEM_ENGLISH_POSSESSIVE;
 
 public class WordDelimiterTokenFilterFactory extends AbstractTokenFilterFactory {
 
@@ -44,9 +52,8 @@ public class WordDelimiterTokenFilterFactory extends AbstractTokenFilterFactory 
     private final int flags;
     private final CharArraySet protoWords;
 
-    @Inject
-    public WordDelimiterTokenFilterFactory(Index index, @IndexSettings Settings indexSettings, Environment env, @Assisted String name, @Assisted Settings settings) {
-        super(index, indexSettings, name, settings);
+    public WordDelimiterTokenFilterFactory(IndexSettings indexSettings, Environment env, String name, Settings settings) {
+        super(indexSettings, name, settings);
 
         // Sample Format for the type table:
         // $ => DIGIT
@@ -80,28 +87,21 @@ public class WordDelimiterTokenFilterFactory extends AbstractTokenFilterFactory 
         // If set, causes trailing "'s" to be removed for each subword: "O'Neil's" => "O", "Neil"
         flags |= getFlag(STEM_ENGLISH_POSSESSIVE, settings, "stem_english_possessive", true);
         // If not null is the set of tokens to protect from being delimited
-        Set<?> protectedWords = Analysis.getWordSet(env, settings, "protected_words");
+        Set<?> protectedWords = Analysis.getWordSet(env, indexSettings.getIndexVersionCreated(), settings, "protected_words");
         this.protoWords = protectedWords == null ? null : CharArraySet.copy(protectedWords);
         this.flags = flags;
     }
 
     @Override
     public TokenStream create(TokenStream tokenStream) {
-         if (version.onOrAfter(Version.LUCENE_4_8)) {
-             return new WordDelimiterFilter(tokenStream,
+         return new WordDelimiterFilter(tokenStream,
                      charTypeTable,
                      flags,
                      protoWords);
-         } else {
-             return new Lucene47WordDelimiterFilter(tokenStream,
-                     charTypeTable,
-                     flags,
-                     protoWords);
-         }
     }
 
     public int getFlag(int flag, Settings settings, String key, boolean defaultValue) {
-        if (settings.getAsBoolean(key, defaultValue)) {
+        if (settings.getAsBooleanLenientForPreEs6Indices(indexSettings.getIndexVersionCreated(), key, defaultValue, deprecationLogger)) {
             return flag;
         }
         return 0;
@@ -113,7 +113,7 @@ public class WordDelimiterTokenFilterFactory extends AbstractTokenFilterFactory 
     /**
      * parses a list of MappingCharFilter style rules into a custom byte[] type table
      */
-    private byte[] parseTypes(Collection<String> rules) {
+    static byte[] parseTypes(Collection<String> rules) {
         SortedMap<Character, Byte> typeMap = new TreeMap<>();
         for (String rule : rules) {
             Matcher m = typePattern.matcher(rule);
@@ -137,7 +137,7 @@ public class WordDelimiterTokenFilterFactory extends AbstractTokenFilterFactory 
         return types;
     }
 
-    private Byte parseType(String s) {
+    private static Byte parseType(String s) {
         if (s.equals("LOWER"))
             return WordDelimiterFilter.LOWER;
         else if (s.equals("UPPER"))
@@ -154,9 +154,8 @@ public class WordDelimiterTokenFilterFactory extends AbstractTokenFilterFactory 
             return null;
     }
 
-    char[] out = new char[256];
-
-    private String parseString(String s) {
+    private static String parseString(String s) {
+        char[] out = new char[256];
         int readPos = 0;
         int len = s.length();
         int writePos = 0;
